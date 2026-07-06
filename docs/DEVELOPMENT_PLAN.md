@@ -109,13 +109,23 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
   (pads_demo indicators track injected input through the full video path).
   pads_demo is the boot cart for the manual hardware check.
 
-## M6 — Audio
+## M6 — Audio ✅ (completed 2026-07-06)
 
 - Second 65C02 instance + audio RAM + 8-bit DAC register, per schematic
 - Main-CPU↔audio-CPU communication path (shared RAM window, reset control)
 - Output through MiSTer audio path (resample to 48 kHz, low-pass)
 - Lockstep audio-trace comparison against emulator for an audio test cart
 - **Done when:** audio test cart trace matches emulator within tolerance.
+- **Done:** `rtl/acp.sv` is schematic-true (HARDWARE.md §Audio, M6 open item
+  resolved): ACP at CLK14, CD40103 period = {rate[6:0],rate[0]}+1 at
+  3.58 MHz (emulator uses preset exactly — <1% pitch divergence, documented),
+  AUDIO_RDY as the run gate, DAC zero-order hold, reset released at the next
+  tick. The audio-trace lockstep was amended to schematic-exact sim
+  verification + a hardware audible check (rationale in TESTING.md — the
+  emulator's headless audio pacing runs ~4× real time). Along the way the
+  vendored CPU gained the NMI-vs-IRQ-coincidence fix (DEPENDENCIES.md §CPU
+  mod 5) — the ACP would otherwise lose main-CPU NMI commands. Boot cart:
+  pads_demo now beeps (~424 Hz saw) while any button is held.
 
 ## M7 — Cartridge
 

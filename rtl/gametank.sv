@@ -49,8 +49,32 @@ module gametank
     output logic [15:0] audio_r
 );
 
-assign audio_l = '0;
-assign audio_r = '0;
+// Audio coprocessor: unsigned 8-bit DAC level on both channels (AUDIO_S=0
+// in the wrapper); the LM358 low-pass is analog-path polish for M8.
+logic       acp_reset_we, acp_nmi_we, acp_rate_we, aram_we;
+logic [7:0] aram_q;
+logic [7:0] dac;
+
+acp acp
+(
+    .clk_sys      (clk_sys),
+    .reset        (reset),
+
+    .reg_reset_we (acp_reset_we),
+    .reg_nmi_we   (acp_nmi_we),
+    .reg_rate_we  (acp_rate_we),
+    .reg_data     (win_din),
+
+    .win_addr     (win_addr[11:0]),
+    .win_we       (aram_we),
+    .win_din      (win_din),
+    .win_dout     (aram_q),
+
+    .dac          (dac)
+);
+
+assign audio_l = {dac, 8'h00};
+assign audio_r = {dac, 8'h00};
 
 // 3.579545 MHz clock-enable for the console (clk_sys / 8): the CPU's RDY
 // strobe. All bus transactions latch at this strobe (see mainbus.sv).
@@ -113,6 +137,12 @@ mainbus mainbus
     .via_wen       (via_wen),
     .via_ren       (via_ren),
     .via_q         (via_q),
+
+    .acp_reset_we  (acp_reset_we),
+    .acp_nmi_we    (acp_nmi_we),
+    .acp_rate_we   (acp_rate_we),
+    .aram_we       (aram_we),
+    .aram_q        (aram_q),
 
     .irq           (blit_irq | via_irq),   // wire-OR per HARDWARE.md
     .nmi           (vsync_nmi && dma_ctl[2])   // VSYNC_NMI enable

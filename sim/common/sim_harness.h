@@ -127,6 +127,9 @@ public:
                                                         (addr & 0x3FFF)];
     }
     uint8_t dmaCtl() const { return top.rootp->gametank__DOT__dma_ctl; }
+    uint8_t aramRead(uint16_t a) const {
+        return top.rootp->gametank__DOT__acp__DOT__aram[a & 0xFFF];
+    }
 
     // Lockstep support: run until `frames` frame boundaries (the vsync-NMI
     // instant at the start of line 0) have passed, snapshotting the

@@ -85,6 +85,20 @@ frames with a multi-byte signature so the comparator can align frame streams
 without relying on absolute frame indices (the emulator's 59,659-cycle frame
 vs. our 59,474 makes absolute alignment meaningless).
 
+## Audio verification (M6 decision)
+
+The plan called for a lockstep audio-trace comparison "within tolerance",
+but the emulator is not a usable audio-timing reference headlessly: in
+`--nosound` mode its pacing constants disagree (`clksPerHostSample = 1024`
+against `samples_per_frame` calibrated for 256), running the ACP ~4× real
+time, and IRQs are quantized to host-sample chunks. The RTL is instead held
+to the *schematic*: `sim/unit/test_acp.cpp` asserts exact CD40103 timing
+(period = preset+1 at 3.579545 MHz), the DAC zero-order hold, saw
+generation via WAI+IRQ firmware, NMI command delivery, and the shared-RAM
+path (which is also what lockstep carts exercise functionally). The audible
+end-to-end check is the pads_demo boot cart's press-a-button tone on
+hardware.
+
 ## Adding a test
 
 1. Write a minimal test cart in `sim/testroms/<name>/` (cc65 project, makefile

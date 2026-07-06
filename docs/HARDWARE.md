@@ -201,8 +201,28 @@ Additional findings (M4, 2026-07-06, from `blitter.cpp`/`gte.cpp` re-read):
   by the game into audio RAM) computes one sample per IRQ, idling in
   `WAI`-loops (`gametank_sdk/src/gt/audio/audio_fw.asm:51`).
 - Analog path: 8-bit multiplying DAC + LM358 low-pass.
-- **Open item (M6):** confirm the exact rate-register encoding and the ACP
-  clock multiplier (`clkMult`) against the schematic (`Hardware/Audio/`).
+- **Resolved (M6, 2026-07-06,** `AVBoard_smt/signals_4.kicad_sch`**):**
+  - **ACP clock = CLK14 (14.318 MHz)** — `CLK14_AUD → U1.PH0-IN`; the
+    emulator's `clkMult = 4` is schematic-true.
+  - **Rate encoding is literal wiring:** the `$2006` value latches into
+    `AUD_FLAGS` (74573) whose outputs feed the CD40103 sample down-counter
+    presets shifted by one — P7..P1 ← D6..D0 and **P0 ← D0 as well** —
+    i.e. period = `(value<<1 & $FE) | (value & 1)` counted at
+    **3.579545 MHz** (`CLK3_5_AUD → CP`); the counter self-reloads at TC
+    (`TC → PE`) — and counts preset..0 **inclusive**, so the true sample
+    period is **preset + 1** clocks (the emulator's accumulator uses exactly
+    `preset`: a <1% pitch divergence at typical rates, same class as the
+    227-line raster approximation). Bit 7 (`AUDIO_RDY`) never reaches the
+    counter — it is the ACP's run gate (RDY).
+  - **TC (~AUDIO_IRQ) drives three things:** the ACP IRQB, the reset
+    flip-flop's CLR, and the **AD7524 DAC's ~WR** — the DAC re-latches the
+    ACP's output byte (staged in the `AUDIO-DAC-BUF` 74573 on ACP A15
+    writes) once per sample tick: a zero-order hold at the sample rate.
+    The emulator updates its `dacReg` immediately on the ACP write; the
+    RTL models the hardware's two stages.
+  - **ACP reset**: `$2000` writes preset the 7474 (RESB asserted) and
+    master-reset the 40103 (counter → $FF); the next TC clears the FF,
+    releasing RESB — "reset takes effect at the next sample tick" ✓.
 
 ## Gamepads — `joystick_adapter.cpp:81–91`
 
