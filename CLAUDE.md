@@ -52,6 +52,13 @@ apt install nodejs zopfli                # GameTank SDK asset pipeline
 # override with MISTER_HOST). Default password on stock MiSTer: 1
 ```
 
+## Additional Tools
+
+If tools are needed to continue development, pick the best one for Linux x64
+and if not present ask the user to install it. Check the user's Linux flavour
+and suggest the best command to do so. Verify the OS variant at the beginning
+of a session.
+
 ## Commands
 
 ```sh
