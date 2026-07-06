@@ -80,7 +80,7 @@ end
 // 8 color bars of 45 px: white, yellow, cyan, green, magenta, red, blue, gray
 logic [2:0] bar;
 always_comb begin
-    bar = 3'(hc / 45);
+    bar = 3'(hc / 9'd45);
 end
 
 logic [7:0] pat_r, pat_g, pat_b;
