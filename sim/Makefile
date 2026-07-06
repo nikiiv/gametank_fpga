@@ -13,7 +13,7 @@ OUT     := out
 
 CPU_SRCS := $(RTL_DIR)/cpu/cpu_65c02.v $(RTL_DIR)/cpu/ALU.v
 RTL_SRCS := $(abspath waivers.vlt) $(RTL_DIR)/gametank.sv $(RTL_DIR)/gtvideo.sv \
-            $(RTL_DIR)/mainbus.sv $(RTL_DIR)/acp.sv $(RTL_DIR)/pads.sv $(RTL_DIR)/via/via6522.v $(RTL_DIR)/vram.sv $(RTL_DIR)/gram_ddr.sv $(RTL_DIR)/blitter.sv $(RTL_DIR)/palette.sv $(CPU_SRCS)
+            $(RTL_DIR)/mainbus.sv $(RTL_DIR)/acp.sv $(RTL_DIR)/pads.sv $(RTL_DIR)/via/via6522.v $(RTL_DIR)/vram.sv $(RTL_DIR)/gram_ddr.sv $(RTL_DIR)/cart.sv $(RTL_DIR)/ddr_mux.sv $(RTL_DIR)/blitter.sv $(RTL_DIR)/palette.sv $(CPU_SRCS)
 
 # Our own RTL must stay -Wall clean; the vendored CPU is exempt (policy:
 # vendored cores are not linted/fixed), so its builds are -Wno-fatal.
@@ -26,8 +26,8 @@ CFLAGS     := -std=c++17 -O2 -I$(COMMON)
 # <tier>/test_<name>.cpp against RTL_SRCS. Klaus import-gate tests have
 # explicit rules below (extra fetch/build inputs and arguments).
 # ---------------------------------------------------------------------------
-UNIT_TESTS        := video_timing blitter gram_ddr pads_via acp mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp
-INTEGRATION_TESTS := cart_ram_pattern cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene cart_pads_demo
+UNIT_TESTS        := video_timing blitter gram_ddr cart pads_via acp mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp
+INTEGRATION_TESTS := cart_ram_pattern cart_download cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene cart_pads_demo
 
 # gametank-test --test NAME passes TEST=NAME
 TEST ?=
@@ -43,8 +43,17 @@ unit: $(UNIT_TESTS:%=run-unit-%)
 
 integration: $(INTEGRATION_TESTS:%=run-integration-%)
 
-system:
-	@echo "No system tests yet (the lockstep harness arrives in M4)."
+# System tier (opt-in, slow): real games through the DDR3 cart path.
+# Usage: make system GTR_GAME=/abs/path/to/game.gtr
+system: $(OUT)/system_game_smoke
+	@echo ">>> system/game_smoke"
+	@if [ -n "$(GTR_GAME)" ]; then cd $(OUT) && ./system_game_smoke $(GTR_GAME); \
+	else echo "set GTR_GAME=/abs/path/to/game.gtr to run"; fi
+
+$(OUT)/system_%: system/test_%.cpp common/sim_harness.h $(RTL_SRCS) | $(OUT)
+	@mkdir -p obj_dir/system_$*
+	$(VERILATOR) $(VFLAGS) --Mdir obj_dir/system_$* -CFLAGS "$(CFLAGS)" \
+		-o $(abspath $@) $(RTL_SRCS) $(abspath $<)
 
 run-unit-%: $(OUT)/unit_%
 	@echo ">>> unit/$*"
@@ -71,6 +80,7 @@ $(OUT):
 # Test carts (ca65/ld65 from the cc65 suite)
 # ---------------------------------------------------------------------------
 run-integration-cart_ram_pattern: testroms/ram_pattern.gtr
+run-integration-cart_download: testroms/ram_pattern.gtr
 
 testroms/ram_pattern.gtr: testroms/ram_pattern/ram_pattern.s testroms/ram_pattern/gametank.cfg
 	cd testroms/ram_pattern && \

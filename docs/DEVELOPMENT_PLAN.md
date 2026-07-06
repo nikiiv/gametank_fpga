@@ -127,12 +127,28 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
   mod 5) — the ACP would otherwise lose main-CPU NMI commands. Boot cart:
   pads_demo now beeps (~424 Hz saw) while any button is held.
 
-## M7 — Cartridge
+## M7 — Cartridge ✅ (completed 2026-07-06)
 
 - DDR3-backed cart controller behind the abstract cart-bus interface;
   prefetch to hide HPS latency (budget: 6502 bus cycle ≈ 280 ns)
 - `.gtr` loading via OSD (`ioctl` download path), banking per HARDWARE.md
 - **Done when:** first real games boot from OSD-loaded `.gtr` on hardware.
+- **Done:** `rtl/cart.sv` (image in HPS DDR3 at `0x3010_0000`, shared with
+  GRAM through the new `rtl/ddr_mux.sv` round-robin arbiter; type from
+  `.gtr` size; bit-true 74HC595 bank SPI on the VIA Port A pins). Latency
+  plan per HARDWARE.md §Cartridge: fixed bank in BRAM (filled once per
+  download), banked window from parity-mapped word buffers with a 2-beat
+  refill under CPU clock-enable stall — buffers only mutate while the CPU
+  is stalled, after an async-prefetch design lost a race between refills
+  and hit lookups (caught by `cart_download`; clock-level trace in the M7
+  log). Wrapper: OSD `Load Cartridge` (index 1) + `boot.rom` auto-load
+  (index 0), console held in reset through the transfer. Tests: `cart`
+  unit (Flash2M banking / SPI / fixed bank / sequential refill),
+  `cart_download` integration (32 KB EEPROM streamed byte-by-byte, boots
+  from DDR3), `game_smoke` system tier (real SDK 2 MB game, logo pixel
+  counts match the emulator exactly). Verified on the DE10: SDK game
+  auto-boots via `boot.rom` and animates; boot cart still runs when no
+  `.gtr` is loaded.
 
 ## M8 — Compatibility & release
 

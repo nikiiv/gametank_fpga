@@ -63,6 +63,8 @@ assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
 localparam CONF_STR = {
 	"GameTank;;",
 	"-;",
+	"F1,GTR,Load Cartridge;",
+	"-;",
 	"O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"-;",
 	"J1,A,B,C,Start;",
@@ -92,8 +94,25 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 	.status_menumask(0),
 
 	.joystick_0(joystick_0),
-	.joystick_1(joystick_1)
+	.joystick_1(joystick_1),
+
+	.ioctl_download(ioctl_download),
+	.ioctl_index(ioctl_index),
+	.ioctl_wr(ioctl_wr),
+	.ioctl_addr(ioctl_addr),
+	.ioctl_dout(ioctl_dout),
+	.ioctl_wait(ioctl_wait)
 );
+
+wire        ioctl_download;
+wire [15:0] ioctl_index;
+wire        ioctl_wr;
+wire [26:0] ioctl_addr;
+wire  [7:0] ioctl_dout;
+wire        ioctl_wait;
+
+// index 1 = OSD "Load Cartridge"; index 0 = boot.rom auto-load at core start
+wire cart_download = ioctl_download && (ioctl_index[5:0] <= 6'd1);
 
 ///////////////////////   CLOCKS   ///////////////////////////////
 
@@ -107,7 +126,9 @@ pll pll
 	.outclk_0(clk_sys)
 );
 
-wire reset = RESET | status[0] | buttons[1];
+// Hold the console in reset for the whole cart transfer; the cart's
+// download machinery runs through reset by design (rtl/cart.sv).
+wire reset = RESET | status[0] | buttons[1] | cart_download;
 
 ///////////////////////   CORE   /////////////////////////////////
 
@@ -135,6 +156,12 @@ gametank gametank
 
 	.cart_addr (cart_addr),
 	.cart_data (cart_data),
+
+	.dl_active (cart_download),
+	.dl_wr     (ioctl_wr && cart_download),
+	.dl_addr   (ioctl_addr[20:0]),
+	.dl_data   (ioctl_dout),
+	.dl_busy   (ioctl_wait),
 
 	.ddr_rd         (DDRAM_RD),
 	.ddr_we         (DDRAM_WE),

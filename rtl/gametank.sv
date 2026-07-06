@@ -17,9 +17,18 @@ module gametank
     input  logic        clk_sys,
     input  logic        reset,
 
-    // cartridge bus ($8000-$FFFF window; sim-backed until the M7 DDR3 path)
+    // Boot-cart bus: the $8000-$FFFF window is served from this external
+    // ROM (wrapper: bootcart BRAM; sim: harness array) until a .gtr
+    // download completes — then rtl/cart.sv takes over the window.
     output logic [14:0] cart_addr,
     input  logic [7:0]  cart_data,
+
+    // .gtr download stream into the DDR3 cart (ioctl / sim harness)
+    input  logic        dl_active,
+    input  logic        dl_wr,
+    input  logic [20:0] dl_addr,
+    input  logic [7:0]  dl_data,
+    output logic        dl_busy,
 
     // DDRAM client (GRAM lives in HPS DDR3 — see rtl/gram_ddr.sv)
     output logic        ddr_rd,
@@ -78,19 +87,20 @@ assign audio_r = {dac, 8'h00};
 
 // 3.579545 MHz clock-enable for the console (clk_sys / 8): the CPU's RDY
 // strobe. All bus transactions latch at this strobe (see mainbus.sv).
-// gram_stall freezes the cadence while a CPU GRAM-window read waits on
-// DDR3 (documented deviation — real hardware never stalls; GRAM reads
-// from the CPU are rare and content-correct).
+// gram_stall/cart_stall freeze the cadence while a CPU read waits on DDR3
+// (documented deviation — real hardware never stalls; GRAM CPU reads are
+// rare, cart misses are kept rare by the prefetch in rtl/cart.sv).
 logic [2:0] ce_div;
 logic       cpu_ce;
 logic       gram_stall;
+logic       cart_stall;
 
 always_ff @(posedge clk_sys) begin
     if (reset) begin
         ce_div <= '0;
         cpu_ce <= 1'b0;
     end
-    else if (gram_stall)
+    else if (gram_stall || cart_stall)
         cpu_ce <= 1'b0;
     else begin
         ce_div <= ce_div + 3'd1;
@@ -116,7 +126,8 @@ mainbus mainbus
     .cpu_ce        (cpu_ce),
 
     .cart_addr     (cart_addr),
-    .cart_data     (cart_data),
+    .cart_rd       (cart_rd),
+    .cart_data     (cart_present ? cart_int_data : cart_data),
 
     .win_addr      (win_addr),
     .win_din       (win_din),
@@ -282,13 +293,88 @@ gram_ddr gram_ddr
     .cpu_q          (gram_b_dout),
     .cpu_stall      (gram_stall),
 
+    .ddr_rd         (g_rd),
+    .ddr_we         (g_we),
+    .ddr_addr       (g_addr),
+    .ddr_din        (g_din),
+    .ddr_be         (g_be),
+    .ddr_burstcnt   (g_burstcnt),
+    .ddr_dout       (ddr_dout),
+    .ddr_dout_ready (g_dout_ready),
+    .ddr_busy       (g_busy)
+);
+
+// Cartridge controller (M7): DDR3-backed .gtr with VIA Port A bank SPI.
+// Shares the DDRAM port with the GRAM prefetcher through ddr_mux.
+logic        cart_rd, cart_present;
+logic [7:0]  cart_int_data;
+logic        g_rd, g_we, g_dout_ready, g_busy;
+logic [28:0] g_addr;
+logic [63:0] g_din;
+logic [7:0]  g_be, g_burstcnt;
+logic        k_rd, k_we, k_dout_ready, k_busy;
+logic [28:0] k_addr;
+logic [63:0] k_din;
+logic [7:0]  k_be, k_burstcnt;
+
+cart cart
+(
+    .clk_sys        (clk_sys),
+    .reset          (reset),
+
+    .cart_addr      (cart_addr),
+    .cart_rd        (cart_rd),
+    .cart_data      (cart_int_data),
+    .cart_stall     (cart_stall),
+    .cart_present   (cart_present),
+
+    .via_pa         (via_pa_i),
+
+    .dl_active      (dl_active),
+    .dl_wr          (dl_wr),
+    .dl_addr        (dl_addr),
+    .dl_data        (dl_data),
+    .dl_busy        (dl_busy),
+
+    .ddr_rd         (k_rd),
+    .ddr_we         (k_we),
+    .ddr_addr       (k_addr),
+    .ddr_din        (k_din),
+    .ddr_be         (k_be),
+    .ddr_burstcnt   (k_burstcnt),
+    .ddr_dout       (ddr_dout),
+    .ddr_dout_ready (k_dout_ready),
+    .ddr_busy       (k_busy)
+);
+
+ddr_mux ddr_mux
+(
+    .clk_sys        (clk_sys),
+
+    .c0_rd          (g_rd),
+    .c0_we          (g_we),
+    .c0_addr        (g_addr),
+    .c0_din         (g_din),
+    .c0_be          (g_be),
+    .c0_burstcnt    (g_burstcnt),
+    .c0_dout_ready  (g_dout_ready),
+    .c0_busy        (g_busy),
+
+    .c1_rd          (k_rd),
+    .c1_we          (k_we),
+    .c1_addr        (k_addr),
+    .c1_din         (k_din),
+    .c1_be          (k_be),
+    .c1_burstcnt    (k_burstcnt),
+    .c1_dout_ready  (k_dout_ready),
+    .c1_busy        (k_busy),
+
     .ddr_rd         (ddr_rd),
     .ddr_we         (ddr_we),
     .ddr_addr       (ddr_addr),
     .ddr_din        (ddr_din),
     .ddr_be         (ddr_be),
     .ddr_burstcnt   (ddr_burstcnt),
-    .ddr_dout       (ddr_dout),
     .ddr_dout_ready (ddr_dout_ready),
     .ddr_busy       (ddr_busy)
 );

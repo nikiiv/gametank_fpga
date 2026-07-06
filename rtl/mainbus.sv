@@ -28,6 +28,7 @@ module mainbus
     input  logic        cpu_ce,      // 3.579545 MHz strobe: CPU RDY
 
     output logic [14:0] cart_addr,   // $8000-$FFFF window (strobe-latched)
+    output logic        cart_rd,     // 1-clk pulse: read latched this strobe
     input  logic [7:0]  cart_data,   // must be valid within the 8-clk window
 
     // VDMA window ($4000-$7FFF): shared strobe-latched address/data with
@@ -159,6 +160,7 @@ always_ff @(posedge clk_sys) begin
     acp_nmi_we   <= cpu_ce && reg_write && cpu_ab[2:0] == 3'd1;
     acp_rate_we  <= cpu_ce && reg_write && cpu_ab[2:0] == 3'd6;
     aram_we      <= cpu_ce && aram_sel && cpu_we;
+    cart_rd      <= cpu_ce && cpu_ab[15] && !cpu_we;
 end
 
 // Read-source select, latched at the strobe alongside the address so the

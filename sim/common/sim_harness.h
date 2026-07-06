@@ -45,13 +45,22 @@ public:
     // Defaults to 0xFF (floating bus, matching the emu wrapper's tie-off).
     std::vector<uint8_t> cart = std::vector<uint8_t>(32768, 0xFF);
 
-    // DDR3 model backing the GRAM region (0x3000_0000, rtl/gram_ddr.sv).
-    // Fixed latency for determinism: a command is accepted when presented,
-    // read data starts DDR_LAT ticks later, one 64-bit beat per tick.
-    static constexpr int DDR_LAT = 12;
-    std::vector<uint8_t> ddr = std::vector<uint8_t>(512 * 1024, 0);
-    struct DdrJob { uint64_t due; uint32_t byteAddr; int beats; int beat; };
+    // DDR3 model backing the HPS region at byte 0x3000_0000: GRAM at
+    // offset 0 (512 KB, rtl/gram_ddr.sv), the cartridge image at offset
+    // 0x100000 (2 MB, rtl/cart.sv — CART_BASE_W). Fixed latency for
+    // determinism: a command is accepted when presented, read data starts
+    // DDR_LAT ticks later, one 64-bit beat per tick.
+    static constexpr int      DDR_LAT  = 12;
+    static constexpr uint32_t DDR_MASK = 0x3FFFFF;         // 4 MB window
+    static constexpr uint32_t CART_OFF = 0x100000;
+    std::vector<uint8_t> ddr = std::vector<uint8_t>(4 * 1024 * 1024, 0);
+    struct DdrJob { uint64_t due; uint32_t byteOff; int beats; int beat; };
     std::vector<DdrJob> ddrJobs;
+
+    // word address (incl. the 0x0600_0000 base) → byte offset into ddr[]
+    static uint32_t ddrOff(uint32_t wordAddr) {
+        return ((wordAddr << 3) - 0x30000000u) & DDR_MASK;
+    }
 
     void ddrStep() {
         top.ddr_dout_ready = 0;
@@ -61,8 +70,8 @@ public:
             auto& j = ddrJobs.front();
             if (cycles >= j.due) {
                 uint64_t v = 0;
-                uint32_t a = (j.byteAddr + (uint32_t)j.beat * 8) & 0x7FFFF;
-                for (int b = 7; b >= 0; b--) v = (v << 8) | ddr[(a + b) & 0x7FFFF];
+                uint32_t a = (j.byteOff + (uint32_t)j.beat * 8) & DDR_MASK;
+                for (int b = 7; b >= 0; b--) v = (v << 8) | ddr[(a + b) & DDR_MASK];
                 top.ddr_dout = v;
                 top.ddr_dout_ready = 1;
                 if (++j.beat == j.beats) ddrJobs.erase(ddrJobs.begin());
@@ -70,14 +79,14 @@ public:
         }
 
         if (top.ddr_rd && ddrJobs.size() < 4) {
-            uint32_t byteAddr = (uint32_t)(top.ddr_addr & 0xFFFF) << 3;
-            ddrJobs.push_back({cycles + DDR_LAT, byteAddr, top.ddr_burstcnt, 0});
+            ddrJobs.push_back({cycles + DDR_LAT, ddrOff(top.ddr_addr),
+                               top.ddr_burstcnt, 0});
         }
         if (top.ddr_we) {
-            uint32_t byteAddr = (uint32_t)(top.ddr_addr & 0xFFFF) << 3;
+            uint32_t byteOff = ddrOff(top.ddr_addr);
             for (int b = 0; b < 8; b++)
                 if (top.ddr_be & (1 << b))
-                    ddr[(byteAddr + b) & 0x7FFFF] = (uint8_t)(top.ddr_din >> (8 * b));
+                    ddr[(byteOff + b) & DDR_MASK] = (uint8_t)(top.ddr_din >> (8 * b));
         }
     }
 
@@ -87,6 +96,64 @@ public:
         size_t n = std::fread(cart.data(), 1, cart.size(), f);
         std::fclose(f);
         if (n == 0) { std::fprintf(stderr, "empty cart %s\n", path.c_str()); std::exit(1); }
+    }
+
+    // --- M7 DDR3 cartridge (rtl/cart.sv) -----------------------------------
+
+    bool cartPresent() const {
+        return top.rootp->gametank__DOT__cart__DOT__present_r;
+    }
+    uint8_t bankMask() const {
+        return top.rootp->gametank__DOT__cart__DOT__bank_mask;
+    }
+
+    // Stream a .gtr image through the core's download port exactly like
+    // the MiSTer wrapper: reset held for the whole transfer, dl_busy
+    // pacing per byte. Leaves reset asserted — call reset() to boot.
+    void gtrDownload(const std::vector<uint8_t>& img) {
+        top.reset = 1;
+        top.dl_active = 1;
+        tick(); tick();
+        for (size_t i = 0; i < img.size(); i++) {
+            top.dl_addr = (uint32_t)i;
+            top.dl_data = img[i];
+            top.dl_wr = 1;
+            tick();
+            top.dl_wr = 0;
+            uint64_t guard = cycles + 1000;
+            while (top.dl_busy && cycles < guard) tick();
+            CHECK(!top.dl_busy, "download stuck at byte %zu", i);
+        }
+        finishDownload();
+    }
+
+    // Big-image shortcut for tests: seed the DDR cart region directly and
+    // push only the first and last byte through the port (enough to set
+    // size/type and trigger the fixed-bank fill).
+    void gtrDownloadSparse(const std::vector<uint8_t>& img) {
+        for (size_t i = 0; i < img.size(); i++)
+            ddr[(CART_OFF + i) & DDR_MASK] = img[i];
+        top.reset = 1;
+        top.dl_active = 1;
+        tick(); tick();
+        auto put = [&](uint32_t a, uint8_t d) {
+            top.dl_addr = a; top.dl_data = d; top.dl_wr = 1;
+            tick();
+            top.dl_wr = 0;
+            uint64_t guard = cycles + 1000;
+            while (top.dl_busy && cycles < guard) tick();
+            CHECK(!top.dl_busy, "sparse download stuck");
+        };
+        put(0, img.front());
+        put((uint32_t)img.size() - 1, img.back());
+        finishDownload();
+    }
+
+    void finishDownload() {
+        top.dl_active = 0;
+        uint64_t guard = cycles + 400000;
+        while (!cartPresent() && cycles < guard) tick();
+        CHECK(cartPresent(), "fixed-bank fill did not complete");
     }
 
     // One clk_sys cycle. onPixel fires at the posedge where ce_pix is high,
@@ -111,6 +178,8 @@ public:
         top.reset = 1;
         top.joy1 = 0;
         top.joy2 = 0;
+        top.dl_active = 0;
+        top.dl_wr = 0;
         for (int i = 0; i < n; i++) tick();
         top.reset = 0;
     }

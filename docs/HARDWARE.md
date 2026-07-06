@@ -271,6 +271,18 @@ chip erase `$10`, `$90` treated as the save-to-disk trigger. **Phase 1 is
 read-only** ([REQUIREMENTS.md](REQUIREMENTS.md)); this section is the spec
 for the post-1.0 save milestone.
 
+**Implemented (M7, `rtl/cart.sv`):** image in HPS DDR3 at byte
+`0x3010_0000` behind a round-robin DDRAM arbiter shared with GRAM
+(`rtl/ddr_mux.sv`); type inferred from `.gtr` size like the emulator
+(8 KB / 32 KB / else Flash2M — RAM32K deferred post-1.0 with flash
+writes). The 74HC595 shift register is modeled bit-true on the VIA Port A
+pins (shift on PA0 rise with pre-edge PA1, latch on PA2 rise, bit 7
+forced high). Latency: $C000–$FFFF is copied to BRAM once per download
+(zero run-time DDR traffic where the vectors and hot loops live); the
+banked window runs from two parity-mapped 8-byte buffers refilled two
+words per miss under a CPU clock-enable stall (~30 clk per 16 sequential
+bytes — documented timing deviation, same class as the GRAM CPU window).
+
 ## Interrupts
 
 | Line | Source |

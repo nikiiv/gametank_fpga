@@ -47,6 +47,11 @@ Real homebrew games run for thousands of frames with scripted input and
 screenshot-hash checkpoints. Run before releases and when chasing
 compatibility bugs; not part of every CI run.
 
+First inhabitant (M7): `game_smoke` — a real `.gtr` (path via `GTR_GAME=`)
+is pushed through the cart download port and must boot from DDR3 and draw
+(`make -C sim system GTR_GAME=/abs/path/game.gtr`). The SDK default
+project's logo screen matches the emulator's pixel counts exactly.
+
 ### On-hardware (manual)
 
 Smoke checklist per release: boot, pad feel/latency, HDMI + analog video,
