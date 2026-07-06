@@ -303,9 +303,16 @@ DDR3** at byte base `0x3000_0000` (`rtl/gram_ddr.sv`): a blit's entire GRAM
 access set is deterministic at TRIGGER, so a demand-gated prefetcher streams
 each row's two gx-quadrant halves (2×128 B) into a double row-buffer one row
 ahead; the engine stalls on misses with a self-healing direct fetch. The
-completion IRQ stays exactly W×H (independent duration counter), and mid-blit
-VRAM is unreadable by design (window = params/open bus during COPY_ENABLE),
-so pixel-write slip is not software-observable; CPU GRAM-window reads stretch
-the clock-enable (documented deviation). System RAM 32 KB + framebuffers
+completion IRQ stays exactly W×H (independent duration counter). **Amended
+(M8):** engine starvation now freezes the console clock-enable outright
+(`blitter.starved`), because "mid-blit slip is unobservable" broke down
+once the M7 cartridge shared the DDR3 port: narrow-tall sprite blits
+starve faster than the IRQ counter runs, and a game triggering the next
+blit from its IRQ handler (the SDK pattern) restarted the engine over the
+previous blit's still-draining tail — clipped/garbled sprites (Ganymede;
+repro locked in as `blit_contention`). With the freeze, the IRQ counter
+and engine can never diverge; the console time-base stretches while the
+raster keeps real time — same documented-deviation class as the CPU
+GRAM-window and cart-miss stalls. System RAM 32 KB + framebuffers
 32 KB + audio RAM 4 KB stay in BRAM (M4 build: 25% BRAM, 23% logic).
 The M7 cartridge shares the DDR3 client.

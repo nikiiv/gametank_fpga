@@ -88,20 +88,22 @@ assign audio_r = {dac, 8'h00};
 
 // 3.579545 MHz clock-enable for the console (clk_sys / 8): the CPU's RDY
 // strobe. All bus transactions latch at this strobe (see mainbus.sv).
-// gram_stall/cart_stall freeze the cadence while a CPU read waits on DDR3
-// (documented deviation — real hardware never stalls; GRAM CPU reads are
-// rare, cart misses are kept rare by the prefetch in rtl/cart.sv).
+// gram_stall/cart_stall freeze the cadence while a CPU read waits on DDR3;
+// blit_starve freezes it while the blitter waits on a GRAM row so the
+// engine can never lag its exact-duration IRQ (documented deviations —
+// real hardware never stalls; the raster keeps real time throughout).
 logic [2:0] ce_div;
 logic       cpu_ce;
 logic       gram_stall;
 logic       cart_stall;
+logic       blit_starve;
 
 always_ff @(posedge clk_sys) begin
     if (reset) begin
         ce_div <= '0;
         cpu_ce <= 1'b0;
     end
-    else if (gram_stall || cart_stall)
+    else if (gram_stall || cart_stall || blit_starve)
         cpu_ce <= 1'b0;
     else begin
         ce_div <= ce_div + 3'd1;
@@ -258,6 +260,7 @@ blitter blitter
     .gram_ready (blit_gram_ready),
     .gram_addr  (blit_gram_addr),
     .gram_q     (blit_gram_q),
+    .starved    (blit_starve),
 
     .vram_we    (blit_vram_we),
     .vram_addr  (blit_vram_addr),

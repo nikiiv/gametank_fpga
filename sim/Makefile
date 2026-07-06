@@ -27,7 +27,7 @@ CFLAGS     := -std=c++17 -O2 -I$(COMMON)
 # explicit rules below (extra fetch/build inputs and arguments).
 # ---------------------------------------------------------------------------
 UNIT_TESTS        := video_timing blitter gram_ddr cart pads_via acp mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp
-INTEGRATION_TESTS := cart_ram_pattern cart_download cart_osd_load cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene cart_pads_demo
+INTEGRATION_TESTS := cart_ram_pattern cart_download cart_osd_load cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene cart_pads_demo blit_contention
 
 # gametank-test --test NAME passes TEST=NAME
 TEST ?=

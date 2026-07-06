@@ -157,13 +157,20 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
   test also asserts the M6 tone through the M7 core. Bad Apple verified
   full-screen on the DE10 via a mid-run indexed load.
 
-## M8 — Compatibility & release
+## M8 — Compatibility & release (in progress)
 
 - Run the known game library + SDK samples through the system suite
   (N-thousand-frame scripted runs, screenshot-hash checkpoints); fix divergences
 - OSD polish (config string, reset, aspect options), analog video verified
 - Docs finalized; release `.rbf` + submission prep for MiSTer-devel
 - **Done when:** library passes; manual on-hardware checklist signed off.
+- **Progress:** Ganymede sprite corruption root-caused and fixed — the blit
+  engine could lag its exact-duration IRQ under DDR contention (cart fetches
+  vs GRAM prefetch), and IRQ-chained sprite blits restarted the engine over
+  the previous blit's tail. Fixed by freezing the console clock-enable on
+  engine starvation (`blitter.starved`); repro test `blit_contention`
+  (IRQ-chained 4×16 sprites with banked-window execution) failed before,
+  passes after. See HARDWARE.md §FPGA memory budget (M8 amendment).
 
 ## Post-1.0
 
