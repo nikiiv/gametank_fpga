@@ -250,10 +250,16 @@ for the post-1.0 save milestone.
 
 ## FPGA memory budget
 
-BRAM: GRAM 512 KB + system RAM 32 KB + framebuffers 32 KB + audio RAM 4 KB ≈
-580 KB = ~4.6 Mbit of the Cyclone V's ~5.5 Mbit — feasible since the MiSTer
-scaler buffers frames in DDR3, but tight; the blitter's random-access GRAM
-reads (mirroring) make DDR3-backed GRAM unattractive. Cartridge (≤2 MB) goes
-in HPS DDR3 per [REQUIREMENTS.md](REQUIREMENTS.md) N2. If BRAM pressure
-bites, the fallback is GRAM in DDR3 with a per-blit line cache — decision
-deferred until M4 fitting results.
+**Resolved (M4, 2026-07-06):** GRAM in BRAM does **not** fit — the framework
+(ascal line buffers etc.) already holds 188 of 553 M10K blocks, and total
+demand came to 9.7 Mbit vs 5.66 available. GRAM therefore lives in **HPS
+DDR3** at byte base `0x3000_0000` (`rtl/gram_ddr.sv`): a blit's entire GRAM
+access set is deterministic at TRIGGER, so a demand-gated prefetcher streams
+each row's two gx-quadrant halves (2×128 B) into a double row-buffer one row
+ahead; the engine stalls on misses with a self-healing direct fetch. The
+completion IRQ stays exactly W×H (independent duration counter), and mid-blit
+VRAM is unreadable by design (window = params/open bus during COPY_ENABLE),
+so pixel-write slip is not software-observable; CPU GRAM-window reads stretch
+the clock-enable (documented deviation). System RAM 32 KB + framebuffers
+32 KB + audio RAM 4 KB stay in BRAM (M4 build: 25% BRAM, 23% logic).
+The M7 cartridge shares the DDR3 client.

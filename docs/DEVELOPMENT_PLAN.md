@@ -80,12 +80,17 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
 - **Done when:** blitter test carts and lockstep runs pass in CI.
 - **Done:** `rtl/blitter.sv` transcribes the emulator's cycle-exact engine
   (IRQ at exactly W×H cycles, level `pending && COPY_IRQ`, TRIGGER clears);
-  512 KB GRAM in BRAM with the gram_mid_bits CPU-quadrant behavior; 12
-  directed + 150 randomized golden-model sweeps. Lockstep harness: pinned
-  emulator + headless patch, frames aligned by cart tag signatures, dumps
-  compared as palette indices. It caught two real cart bugs on day one
-  (uninitialized $2005; mirrored-blit GX complement) — determinism rules
-  now in TESTING.md. Boot cart is now blit_scene (animated blitter demo).
+  12 directed + 150 randomized golden-model sweeps. **The M4 fitting
+  decision fell to DDR3**: 512 KB GRAM in BRAM demands 9.7 Mbit vs 5.66
+  available, so GRAM lives in HPS DDR3 (`rtl/gram_ddr.sv`: demand-gated
+  row-pair prefetch, engine stall on miss, exact IRQ preserved; deviations
+  documented in the module header — final build 25% BRAM / 23% logic).
+  Lockstep harness: pinned emulator + headless patch, frames aligned by
+  cart tag signatures, compared as palette indices. It caught two real cart
+  bugs (uninitialized $2005; mirrored-blit GX complement) and two RTL
+  prefetcher bugs (over-eager prefetch; serve-slot mux following live tags)
+  — determinism rules in TESTING.md. Boot cart = blit_scene; animated
+  blitter demo verified on the DE10 over HDMI.
 
 ## M5 — Input & VIA
 
