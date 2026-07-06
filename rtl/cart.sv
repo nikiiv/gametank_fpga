@@ -60,6 +60,7 @@ module cart
     input  logic [20:0] dl_addr,
     input  logic [7:0]  dl_data,
     output logic        dl_busy,        // backpressure (→ ioctl_wait)
+    output logic        dl_wait,        // hold console reset: fill running
 
     // DDR3 client (via ddr_mux)
     output logic        ddr_rd,
@@ -160,6 +161,12 @@ logic        dlw_pend = 1'b0;          // one buffered download byte
 logic [20:0] dlw_addr;
 logic [7:0]  dlw_data;
 assign dl_busy = dlw_pend;
+
+// The wrapper drops its download reset the moment ioctl_download ends,
+// but the fixed-bank fill still needs ~30 us of DDR traffic. Without
+// this hold the console would boot the OLD window and then have it
+// swapped mid-execution when present_r flips (the M7 OSD-load freeze).
+assign dl_wait = dl_active_q || dlw_pend || filling;
 
 // ---------------------------------------------------------------------------
 // Console read service

@@ -126,9 +126,11 @@ pll pll
 	.outclk_0(clk_sys)
 );
 
-// Hold the console in reset for the whole cart transfer; the cart's
-// download machinery runs through reset by design (rtl/cart.sv).
-wire reset = RESET | status[0] | buttons[1] | cart_download;
+// Hold the console in reset for the whole cart transfer AND the cart's
+// post-download fixed-bank fill (dl_wait) — the download machinery runs
+// through reset by design (rtl/cart.sv).
+wire dl_wait;
+wire reset = RESET | status[0] | buttons[1] | cart_download | dl_wait;
 
 ///////////////////////   CORE   /////////////////////////////////
 
@@ -162,6 +164,7 @@ gametank gametank
 	.dl_addr   (ioctl_addr[20:0]),
 	.dl_data   (ioctl_dout),
 	.dl_busy   (ioctl_wait),
+	.dl_wait   (dl_wait),
 
 	.ddr_rd         (DDRAM_RD),
 	.ddr_we         (DDRAM_WE),

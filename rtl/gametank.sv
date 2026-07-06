@@ -29,6 +29,7 @@ module gametank
     input  logic [20:0] dl_addr,
     input  logic [7:0]  dl_data,
     output logic        dl_busy,
+    output logic        dl_wait,   // keep the console in reset (fill running)
 
     // DDRAM client (GRAM lives in HPS DDR3 — see rtl/gram_ddr.sv)
     output logic        ddr_rd,
@@ -335,6 +336,7 @@ cart cart
     .dl_addr        (dl_addr),
     .dl_data        (dl_data),
     .dl_busy        (dl_busy),
+    .dl_wait        (dl_wait),
 
     .ddr_rd         (k_rd),
     .ddr_we         (k_we),

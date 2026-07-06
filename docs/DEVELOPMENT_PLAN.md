@@ -148,7 +148,14 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
   from DDR3), `game_smoke` system tier (real SDK 2 MB game, logo pixel
   counts match the emulator exactly). Verified on the DE10: SDK game
   auto-boots via `boot.rom` and animates; boot cart still runs when no
-  `.gtr` is loaded.
+  `.gtr` is loaded. **Field fix (same day):** OSD loads froze — the
+  wrapper released reset when `ioctl_download` dropped, but the fixed-bank
+  fill still had ~30 µs to run, so the console booted the old window and
+  had it swapped mid-execution (`boot.rom` loads never hit this: the
+  framework's init reset outlives the fill). `dl_wait` now holds reset
+  through the fill; repro locked in as `cart_osd_load`, and the pads_demo
+  test also asserts the M6 tone through the M7 core. Bad Apple verified
+  full-screen on the DE10 via a mid-run indexed load.
 
 ## M8 — Compatibility & release
 
