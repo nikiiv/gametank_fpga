@@ -118,7 +118,9 @@ if [[ ! -f "${RBF_OUT}" ]]; then
     echo "ERROR: ${RBF_OUT} not found after compile." >&2
     exit 1
 fi
-RBF_SIZE=$(stat -f %z "${RBF_OUT}" 2>/dev/null || stat -c %s "${RBF_OUT}")
+# wc -c is portable; GNU stat -f means "filesystem status" and would succeed
+# with garbage output where the BSD/macOS size syntax was intended.
+RBF_SIZE=$(wc -c < "${RBF_OUT}")
 printf ">>> Built %s (%d bytes)\n" "${RBF_OUT}" "${RBF_SIZE}"
 
 # === Deploy ===
