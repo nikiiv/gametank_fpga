@@ -8,7 +8,13 @@
 ; it pixel-exactly against the same pattern pushed through the capture-based
 ; palette.
 
-.setcpu "W65C02"
+.setcpu "65C02"
+
+; WAI ($CB) is WDC-only; ancient ca65 (apt cc65 2.19 in CI) rejects
+; .setcpu "W65C02", so emit the opcode directly.
+.macro wai
+        .byte $CB
+.endmacro
 
 BANKING = $2005
 DMACTL  = $2007

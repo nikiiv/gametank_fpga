@@ -171,7 +171,7 @@ wire [7:0] row_eff = ydir_l ? ~next_gy : next_gy;
 
 // Miss redirect: engine waiting on a row neither slot holds nor is filling
 wire miss_redirect = blit_want && !dma_ctl[3] && !hit0 && !hit1 &&
-                     !(st inside {BURST_CMD, BURST_DATA} && fill_row == want_row);
+                     !((st == BURST_CMD || st == BURST_DATA) && fill_row == want_row);
 
 always_ff @(posedge clk_sys) begin
     if (reset) begin
