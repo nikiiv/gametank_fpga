@@ -13,7 +13,7 @@ OUT     := out
 
 CPU_SRCS := $(RTL_DIR)/cpu/cpu_65c02.v $(RTL_DIR)/cpu/ALU.v
 RTL_SRCS := $(abspath waivers.vlt) $(RTL_DIR)/gametank.sv $(RTL_DIR)/testpattern.sv \
-            $(RTL_DIR)/mainbus.sv $(CPU_SRCS)
+            $(RTL_DIR)/mainbus.sv $(RTL_DIR)/vram.sv $(RTL_DIR)/palette.sv $(CPU_SRCS)
 
 # Our own RTL must stay -Wall clean; the vendored CPU is exempt (policy:
 # vendored cores are not linted/fixed), so its builds are -Wno-fatal.
@@ -26,7 +26,7 @@ CFLAGS     := -std=c++17 -O2 -I$(COMMON)
 # <tier>/test_<name>.cpp against RTL_SRCS. Klaus import-gate tests have
 # explicit rules below (extra fetch/build inputs and arguments).
 # ---------------------------------------------------------------------------
-UNIT_TESTS        := video_timing mainbus cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp
+UNIT_TESTS        := video_timing mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp
 INTEGRATION_TESTS := frame_capture cart_ram_pattern
 
 # gametank-test --test NAME passes TEST=NAME

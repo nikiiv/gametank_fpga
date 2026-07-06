@@ -82,9 +82,15 @@ Reads of write-only ranges return open bus. RAM powers up uninitialized.
   (`Hardware/VideoOut/`, 74HC4040 raster counters). 60 Hz, ~59,659 CPU cycles
   per frame.
 - 8-bit pixels map to color via a fixed palette — 256×RGB tables in
-  `gametank_palette.h` (4 variants; the first is labeled "Original
-  (incorrect) emulator palette"). **Open item (M3):** confirm which variant
-  the emulator currently defaults to and validate the LUT against it.
+  `gametank_palette.h` (4 variants). **Resolved (M3, 2026-07-06):** the
+  emulator defaults to the **capture-based** palette (`palette.cpp`:
+  `palette_select = PALETTE_SELECT_CAPTURE`, entries 256–511 of
+  `gt_palette_vals`); our `rtl/palette.sv` is generated from exactly that
+  block. Note index 0 is `#1A1A1A`, not pure black (real capture data).
+  Emulator display quirk to remember for M4 lockstep: `Palette::ConvertColor`
+  remaps any color that lands on pure black to RGB(1,1,1) at render time —
+  an SDL artifact, not hardware; frame comparisons should use framebuffer
+  indices (or replicate the remap) rather than raw RGB.
 - **Open item (M3):** exact line timing / vblank window. The emulator only
   models whole frames (`cycles_per_vsync`); our true-scanout raster must be
   derived from the VideoOut schematic so the vblank NMI lands at the real

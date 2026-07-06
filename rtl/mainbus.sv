@@ -30,8 +30,17 @@ module mainbus
     output logic [14:0] cart_addr,   // $8000-$FFFF window (strobe-latched)
     input  logic [7:0]  cart_data,   // must be valid within the 8-clk window
 
+    // VDMA window ($4000-$7FFF) to the framebuffer, via vram port A
+    output logic        vram_page,   // banking[3]
+    output logic [13:0] vram_addr,   // strobe-latched
+    output logic        vram_we,     // one-clock pulse at the strobe
+    output logic [7:0]  vram_din,
+    input  logic [7:0]  vram_dout,
+
+    output logic [7:0]  dma_ctl,     // $2007 register (docs/HARDWARE.md)
+
     input  logic        irq,         // blitter IRQ (M4), VIA (M5)
-    input  logic        nmi          // vsync NMI (M3/M4)
+    input  logic        nmi          // vsync NMI (from scanout, gated dma_ctl[2])
 );
 
 wire [15:0] cpu_ab;
@@ -55,16 +64,21 @@ cpu_65c02 cpu
 );
 /* verilator lint_on PINCONNECTEMPTY */
 
-// Banking register $2005 (writes decoded as addr&7 within $2000-$2007)
+// System registers $2000-$2007 (writes decoded as addr&7):
+//   $2005 banking, $2007 DMA control (other slots are audio regs, M6)
 logic [7:0] banking /*verilator public_flat_rd*/;
 
 wire reg_write = cpu_we && (cpu_ab[15:3] == 13'h400);  // $2000-$2007
 
 always_ff @(posedge clk_sys) begin
-    if (reset)
+    if (reset) begin
         banking <= '0;
-    else if (cpu_ce && reg_write && cpu_ab[2:0] == 3'd5)
-        banking <= cpu_do;
+        dma_ctl <= '0;
+    end
+    else if (cpu_ce && reg_write) begin
+        if (cpu_ab[2:0] == 3'd5) banking <= cpu_do;
+        if (cpu_ab[2:0] == 3'd7) dma_ctl <= cpu_do;
+    end
 end
 
 // System RAM: 32 KB BRAM, CPU sees an 8 KB window at $0000 selected by
@@ -84,10 +98,29 @@ always_ff @(posedge clk_sys) begin
     end
 end
 
+// VDMA window $4000-$7FFF -> framebuffer, when CPU_TO_VRAM (dma_ctl[5]) is
+// set and the blitter doesn't own the window (COPY_ENABLE, dma_ctl[0], off).
+// GRAM access (dma_ctl[5]=0) and blitter parameters (dma_ctl[0]=1) are
+// M4 territory: writes are dropped, reads are open bus.
+wire vram_sel = (cpu_ab[15:14] == 2'b01) && dma_ctl[5] && !dma_ctl[0];
+
+assign vram_page = banking[3];
+
+// Address/data latch at the strobe; the write-enable pulse lands one clock
+// later, aligned with the latched values (cpu_do changes right after the
+// strobe posedge, so it must be captured, not passed through).
+always_ff @(posedge clk_sys) begin
+    if (cpu_ce) begin
+        vram_addr <= cpu_ab[13:0];
+        vram_din  <= cpu_do;
+    end
+    vram_we <= cpu_ce && vram_sel && cpu_we;
+end
+
 // Read-source select, latched at the strobe alongside the address so the
 // data mux below is loop-free (the core's AB is a function of DI on
 // vector/jump-target cycles).
-typedef enum logic [1:0] { SEL_RAM, SEL_CART, SEL_OPEN } rdsel_e;
+typedef enum logic [1:0] { SEL_RAM, SEL_CART, SEL_VRAM, SEL_OPEN } rdsel_e;
 rdsel_e     rd_sel;
 logic [7:0] open_bus;
 
@@ -95,6 +128,7 @@ always_ff @(posedge clk_sys) begin
     if (cpu_ce) begin
         unique casez (cpu_ab)
             16'b000?_????_????_????: rd_sel <= SEL_RAM;   // $0000-$1FFF
+            16'b01??_????_????_????: rd_sel <= vram_sel ? SEL_VRAM : SEL_OPEN;
             16'b1???_????_????_????: rd_sel <= SEL_CART;  // $8000-$FFFF
             default:                 rd_sel <= SEL_OPEN;
         endcase
@@ -107,6 +141,7 @@ always_comb begin
     unique case (rd_sel)
         SEL_RAM:  cpu_di = ram_q;
         SEL_CART: cpu_di = cart_data;
+        SEL_VRAM: cpu_di = vram_dout;
         default:  cpu_di = open_bus;
     endcase
 end

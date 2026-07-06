@@ -53,6 +53,14 @@ always_ff @(posedge clk_sys) begin
     end
 end
 
+logic        vram_a_page;
+logic [13:0] vram_a_addr;
+logic        vram_a_we;
+logic [7:0]  vram_a_din, vram_a_dout;
+logic [13:0] vram_b_addr;
+logic [7:0]  vram_b_dout;
+logic [7:0]  dma_ctl;
+
 mainbus mainbus
 (
     .clk_sys   (clk_sys),
@@ -62,9 +70,37 @@ mainbus mainbus
     .cart_addr (cart_addr),
     .cart_data (cart_data),
 
+    .vram_page (vram_a_page),
+    .vram_addr (vram_a_addr),
+    .vram_we   (vram_a_we),
+    .vram_din  (vram_a_din),
+    .vram_dout (vram_a_dout),
+
+    .dma_ctl   (dma_ctl),
+
     .irq       (1'b0),   // blitter IRQ arrives in M4
-    .nmi       (1'b0)    // vsync NMI arrives in M3/M4
+    .nmi       (1'b0)    // vsync NMI: wired when the real scanout lands
 );
+
+vram vram
+(
+    .clk    (clk_sys),
+
+    .a_page (vram_a_page),
+    .a_addr (vram_a_addr),
+    .a_we   (vram_a_we),
+    .a_din  (vram_a_din),
+    .a_dout (vram_a_dout),
+
+    .b_page (dma_ctl[1]),   // VID_OUT_PAGE
+    .b_addr (vram_b_addr),
+    .b_dout (vram_b_dout)
+);
+
+// Scanout drives port B once the real raster generator lands (M3);
+// silence the temporarily-unused signals.
+assign vram_b_addr = '0;
+wire _unused_vram = &{1'b0, vram_b_dout, dma_ctl[7:2], dma_ctl[0]};
 
 testpattern testpattern
 (

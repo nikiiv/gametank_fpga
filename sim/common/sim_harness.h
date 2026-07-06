@@ -70,6 +70,10 @@ public:
     uint8_t banking() const {
         return top.rootp->gametank__DOT__mainbus__DOT__banking;
     }
+    uint8_t vramRead(int page, uint16_t addr) const {
+        return top.rootp->gametank__DOT__vram__DOT__mem[((page & 1) << 14) |
+                                                        (addr & 0x3FFF)];
+    }
 };
 
 // Minimal test reporting: CHECK aborts with context on failure.
