@@ -115,8 +115,8 @@ inline Frame captureFrame(Sim& sim) {
     std::vector<uint8_t> row;
     int width = -1;
 
-    // Bound the wait: a frame is 455*262 pixels; 4 clk per pixel.
-    const uint64_t maxCycles = sim.cycles + 4ull * 455 * 262 * 3;
+    // Bound the wait: a frame is 1816 clk × 262 lines (gtvideo raster).
+    const uint64_t maxCycles = sim.cycles + 3ull * 1816 * 262;
 
     while (!done && sim.cycles < maxCycles) {
         sim.tick([&](const Pixel& p) {

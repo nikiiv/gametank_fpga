@@ -79,7 +79,7 @@ mainbus mainbus
     .dma_ctl   (dma_ctl),
 
     .irq       (1'b0),   // blitter IRQ arrives in M4
-    .nmi       (1'b0)    // vsync NMI: wired when the real scanout lands
+    .nmi       (vsync_nmi && dma_ctl[2])   // VSYNC_NMI enable
 );
 
 vram vram
@@ -97,24 +97,29 @@ vram vram
     .b_dout (vram_b_dout)
 );
 
-// Scanout drives port B once the real raster generator lands (M3);
-// silence the temporarily-unused signals.
-assign vram_b_addr = '0;
-wire _unused_vram = &{1'b0, vram_b_dout, dma_ctl[7:2], dma_ctl[0]};
+// dma_ctl[5] (CPU_TO_VRAM) is consumed inside mainbus; [1]/[2] here.
+wire _unused_dma = &{1'b0, dma_ctl[7:3], dma_ctl[0]};
 
-testpattern testpattern
+logic vsync_nmi;
+
+gtvideo gtvideo
 (
-    .clk    (clk_sys),
-    .reset  (reset),
+    .clk       (clk_sys),
+    .reset     (reset),
 
-    .ce_pix (ce_pix),
-    .hblank (hblank),
-    .hsync  (hsync),
-    .vblank (vblank),
-    .vsync  (vsync),
-    .r      (video_r),
-    .g      (video_g),
-    .b      (video_b)
+    .fb_addr   (vram_b_addr),
+    .fb_data   (vram_b_dout),
+
+    .ce_pix    (ce_pix),
+    .hblank    (hblank),
+    .hsync     (hsync),
+    .vblank    (vblank),
+    .vsync     (vsync),
+    .r         (video_r),
+    .g         (video_g),
+    .b         (video_b),
+
+    .vsync_nmi (vsync_nmi)
 );
 
 endmodule

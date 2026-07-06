@@ -91,10 +91,39 @@ Reads of write-only ranges return open bus. RAM powers up uninitialized.
   remaps any color that lands on pure black to RGB(1,1,1) at render time —
   an SDL artifact, not hardware; frame comparisons should use framebuffer
   indices (or replicate the remap) rather than raw RGB.
-- **Open item (M3):** exact line timing / vblank window. The emulator only
-  models whole frames (`cycles_per_vsync`); our true-scanout raster must be
-  derived from the VideoOut schematic so the vblank NMI lands at the real
-  raster position.
+- **Resolved (M3, 2026-07-06) — exact raster timing**, derived from
+  `Hardware/KiCad/AVBoard_smt/Composite_Video_Generator.kicad_sch` (identical
+  counter/decode wiring in the EAGLE `vidgen_only_r3` and KiCad `AVBoard`
+  generations). Master clock 28.63636 MHz (8× colorburst); a synchronous
+  74AC161 divider produces CLK14/CLK7/CLK3_5, and CPU PH0 = CLK3_5, so raster
+  positions are exact CPU-cycle positions. All counts in CLK3_5 cycles:
+  - **Line = 227 cycles** (74HC4040 H-counter, CD74HC30 decode of
+    2+4+64+128+256 → async HRESET via a CLK7-clocked 7474; one-CLK7 reset
+    pulse). 227 is the strongly-favored reading of an async race — the
+    alternative is 228; a scope measurement of HRESET on real hardware would
+    settle it. HBLANK counts 0–39, HSYNC counts 16–31, colorburst 32–39.
+  - **Frame = 262 progressive lines** (V-counter clocked by HRESET, decode
+    1+4+256 → VRESET spans line 0) = **59,474 CPU cycles** (60.19 Hz). The
+    emulator's `cycles_per_vsync` = 59,659 (exactly 60 Hz) is a whole-frame
+    approximation, +185 cycles vs. hardware. VBLANK lines 0–15, VSYNC
+    lines 4–7 (CSYNC XNOR serration, no equalization pulses).
+  - **Pixels**: XCLK = 28.636/5 = 5.727 MHz; each framebuffer pixel = 2 XCLK
+    = 1.25 CPU cycles (2.8636 MHz dot rate). Pixel scan releases at count 63
+    (SCAN_DELAY 74HC161 counting 12 × 2H after HBLANK), so 128 pixels span
+    counts ≈63–223. First-pixel phase has ±2 CLK28 ripple uncertainty.
+  - **Line doubling**: the row counter is clocked by V-count bit 0 and held
+    reset by VBLANK; its release swallows one edge, so **row 0 lands on
+    lines 16–17**, row r on lines 16+2r/17+2r, and **rows 123–127 are never
+    scanned out** (246 active lines, no bottom border).
+  - **Borders**: the pixel latch (74564) holds the last latched byte, so the
+    left/right borders (counts 40–63 and 223–227) display **pixel 127 of the
+    previously scanned row** (previous frame's (127,122) on line 16), not
+    black. True black only during H/V blanking (picture-enable off).
+  - **Vsync NMI**: ~VRESET crosses to the logic board as VNMI; NMI = VNMI
+    gated by DMA flags bit 2 (open-drain into W65C02S NMIB). The NMI edge
+    fires **at the start of line 0**, 16 blanked lines (3,632 CPU cycles)
+    before scanout resumes at line 16. **No CPU-readable vblank flag
+    exists** — vblank is observable only via the NMI.
 
 ## Blitter — `blitter.cpp`, `blitter.h`
 

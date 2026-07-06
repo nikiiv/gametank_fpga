@@ -50,7 +50,7 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
   RAM banking (4×8K into 32 KB BRAM), open-bus reads, and the abstract cart
   bus (sim-backed until M7). First cart: `sim/testroms/ram_pattern`.
 
-## M3 — Video
+## M3 — Video ✅ (completed 2026-07-06)
 
 - NTSC-timed raster generator (true scanout), dual framebuffers in BRAM,
   front/back flip register, palette LUT
@@ -58,6 +58,16 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
 - Test cart draws a pattern via direct CPU framebuffer writes; sim captures
   the scanned-out frame and CRC-compares against the emulator's frame
 - **Done when:** first real pixels over HDMI on hardware; frame-CRC test in CI.
+- **Done:** both M3 open items resolved and recorded in HARDWARE.md §Video —
+  palette = the emulator's capture-based table (generated `rtl/palette.sv` /
+  `sim/common/gt_palette.h`), raster derived from the Composite_Video_Generator
+  schematic (227 CPU cycles/line × 262 progressive lines = 59,474
+  cycles/frame; rows line-doubled from line 16, rows 123–127 never scanned;
+  NMI at line 0). `rtl/gtvideo.sv` implements it cycle-honestly at the same
+  28.636 MHz master clock as the real console, including the 74564
+  pixel-latch border behavior. `fb_pattern` cart verifies the full chain
+  pixel-exactly in CI (`cart_fb_pattern`), incl. vsync-NMI via a WAI loop.
+  The cart is also baked into the `.rbf` as a boot ROM until OSD loading (M7).
 
 ## M4 — Blitter & interrupts
 

@@ -110,14 +110,23 @@ wire VSync;
 wire ce_pix;
 wire [7:0] video_r, video_g, video_b;
 
+// Built-in boot cart: sim/testroms/fb_pattern.gtr baked into BRAM so the
+// video chain is demonstrable on hardware before OSD .gtr loading (M7).
+// Regenerate with: hexdump -v -e '1/1 "%02X\n"' sim/testroms/fb_pattern.gtr > rtl/bootcart.mem
+logic [7:0] bootcart [0:32767];
+initial $readmemh("rtl/bootcart.mem", bootcart);
+
+wire [14:0] cart_addr;
+logic [7:0] cart_data;
+always @(posedge clk_sys) cart_data <= bootcart[cart_addr];
+
 gametank gametank
 (
 	.clk_sys (clk_sys),
 	.reset   (reset),
 
-	// No cart yet on hardware (OSD .gtr loading lands in M7); reads float.
-	.cart_addr (),
-	.cart_data (8'hFF),
+	.cart_addr (cart_addr),
+	.cart_data (cart_data),
 
 	.ce_pix  (ce_pix),
 	.hblank  (HBlank),

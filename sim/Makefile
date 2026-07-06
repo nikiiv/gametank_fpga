@@ -12,7 +12,7 @@ COMMON  := $(abspath common)
 OUT     := out
 
 CPU_SRCS := $(RTL_DIR)/cpu/cpu_65c02.v $(RTL_DIR)/cpu/ALU.v
-RTL_SRCS := $(abspath waivers.vlt) $(RTL_DIR)/gametank.sv $(RTL_DIR)/testpattern.sv \
+RTL_SRCS := $(abspath waivers.vlt) $(RTL_DIR)/gametank.sv $(RTL_DIR)/gtvideo.sv \
             $(RTL_DIR)/mainbus.sv $(RTL_DIR)/vram.sv $(RTL_DIR)/palette.sv $(CPU_SRCS)
 
 # Our own RTL must stay -Wall clean; the vendored CPU is exempt (policy:
@@ -27,7 +27,7 @@ CFLAGS     := -std=c++17 -O2 -I$(COMMON)
 # explicit rules below (extra fetch/build inputs and arguments).
 # ---------------------------------------------------------------------------
 UNIT_TESTS        := video_timing mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp
-INTEGRATION_TESTS := frame_capture cart_ram_pattern
+INTEGRATION_TESTS := cart_ram_pattern cart_fb_pattern
 
 # gametank-test --test NAME passes TEST=NAME
 TEST ?=
@@ -135,3 +135,10 @@ run-unit-cpu_klaus_6502: $(OUT)/unit_cpu_klaus klaus/upstream/.stamp
 run-unit-cpu_klaus_65c02: $(OUT)/unit_cpu_klaus klaus/65C02_extended_opcodes_test.bin klaus/extended_success_pc.txt
 	@echo ">>> unit/cpu_klaus_65c02"
 	@cd $(OUT) && ./unit_cpu_klaus ../klaus/65C02_extended_opcodes_test.bin $$(cat ../klaus/extended_success_pc.txt)
+
+run-integration-cart_fb_pattern: testroms/fb_pattern.gtr
+
+testroms/fb_pattern.gtr: testroms/fb_pattern/fb_pattern.s testroms/fb_pattern/gametank.cfg
+	cd testroms/fb_pattern && \
+	  ca65 fb_pattern.s -o fb_pattern.o && \
+	  ld65 fb_pattern.o -C gametank.cfg -o ../fb_pattern.gtr
