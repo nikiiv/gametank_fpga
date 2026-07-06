@@ -16,12 +16,6 @@
 
 .setcpu "65C02"
 
-; WAI ($CB) is WDC-only; ancient ca65 (apt cc65 2.19 in CI) rejects
-; .setcpu "W65C02", so emit the opcode directly.
-.macro wai
-        .byte $CB
-.endmacro
-
 BANKING = $2005
 DMACTL  = $2007
 
@@ -210,7 +204,7 @@ cly1:   sta $4001
         ora #$24
         sta DMACTL
 
-wnmi:   wai
+wnmi:   .byte $CB       ; WAI (WDC-only; old ca65 lacks the mnemonic)
         lda NMICNT
         cmp LASTNMI
         beq wnmi
