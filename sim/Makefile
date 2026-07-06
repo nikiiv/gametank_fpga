@@ -13,7 +13,7 @@ OUT     := out
 
 CPU_SRCS := $(RTL_DIR)/cpu/cpu_65c02.v $(RTL_DIR)/cpu/ALU.v
 RTL_SRCS := $(abspath waivers.vlt) $(RTL_DIR)/gametank.sv $(RTL_DIR)/gtvideo.sv \
-            $(RTL_DIR)/mainbus.sv $(RTL_DIR)/vram.sv $(RTL_DIR)/gram_ddr.sv $(RTL_DIR)/blitter.sv $(RTL_DIR)/palette.sv $(CPU_SRCS)
+            $(RTL_DIR)/mainbus.sv $(RTL_DIR)/pads.sv $(RTL_DIR)/via/via6522.v $(RTL_DIR)/vram.sv $(RTL_DIR)/gram_ddr.sv $(RTL_DIR)/blitter.sv $(RTL_DIR)/palette.sv $(CPU_SRCS)
 
 # Our own RTL must stay -Wall clean; the vendored CPU is exempt (policy:
 # vendored cores are not linted/fixed), so its builds are -Wno-fatal.
@@ -26,8 +26,8 @@ CFLAGS     := -std=c++17 -O2 -I$(COMMON)
 # <tier>/test_<name>.cpp against RTL_SRCS. Klaus import-gate tests have
 # explicit rules below (extra fetch/build inputs and arguments).
 # ---------------------------------------------------------------------------
-UNIT_TESTS        := video_timing blitter gram_ddr mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp
-INTEGRATION_TESTS := cart_ram_pattern cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene
+UNIT_TESTS        := video_timing blitter gram_ddr pads_via mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp
+INTEGRATION_TESTS := cart_ram_pattern cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene cart_pads_demo
 
 # gametank-test --test NAME passes TEST=NAME
 TEST ?=
@@ -198,3 +198,10 @@ $(OUT)/unit_gram_ddr: unit/test_gram_ddr.cpp $(RTL_DIR)/gram_ddr.sv | $(OUT)
 	$(VERILATOR) --cc --exe --build -j 0 -Wall --assert -O2 --top-module gram_ddr \
 		--Mdir obj_dir/unit_gram_ddr -CFLAGS "$(CFLAGS)" \
 		-o $(abspath $@) $(RTL_DIR)/gram_ddr.sv $(abspath $<)
+
+testroms/pads_demo.gtr: testroms/pads_demo/pads_demo.s testroms/pads_demo/gametank.cfg
+	cd testroms/pads_demo && \
+	  ca65 pads_demo.s -o pads_demo.o && \
+	  ld65 pads_demo.o -C gametank.cfg -o ../pads_demo.gtr
+
+run-integration-cart_pads_demo: testroms/pads_demo.gtr

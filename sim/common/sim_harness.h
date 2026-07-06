@@ -109,6 +109,8 @@ public:
 
     void reset(int n = 16) {
         top.reset = 1;
+        top.joy1 = 0;
+        top.joy2 = 0;
         for (int i = 0; i < n; i++) tick();
         top.reset = 0;
     }

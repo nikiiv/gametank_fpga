@@ -65,6 +65,8 @@ localparam CONF_STR = {
 	"-;",
 	"O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"-;",
+	"J1,A,B,C,Start;",
+	"-;",
 	"T[0],Reset;",
 	"R[0],Reset and close OSD;",
 	"v,0;",
@@ -74,6 +76,7 @@ localparam CONF_STR = {
 wire forced_scandoubler;
 wire   [1:0] buttons;
 wire [127:0] status;
+wire  [31:0] joystick_0, joystick_1;
 
 hps_io #(.CONF_STR(CONF_STR)) hps_io
 (
@@ -86,7 +89,10 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 	.buttons(buttons),
 	.status(status),
-	.status_menumask(0)
+	.status_menumask(0),
+
+	.joystick_0(joystick_0),
+	.joystick_1(joystick_1)
 );
 
 ///////////////////////   CLOCKS   ///////////////////////////////
@@ -112,9 +118,9 @@ wire VSync;
 wire ce_pix;
 wire [7:0] video_r, video_g, video_b;
 
-// Built-in boot cart: sim/testroms/blit_scene.gtr baked into BRAM so the
+// Built-in boot cart: sim/testroms/pads_demo.gtr baked into BRAM so the
 // video chain is demonstrable on hardware before OSD .gtr loading (M7).
-// Regenerate with: hexdump -v -e '1/1 "%02X\n"' sim/testroms/blit_scene.gtr > rtl/bootcart.mem
+// Regenerate with: hexdump -v -e '1/1 "%02X\n"' sim/testroms/pads_demo.gtr > rtl/bootcart.mem
 logic [7:0] bootcart [0:32767];
 initial $readmemh("rtl/bootcart.mem", bootcart);
 
@@ -139,6 +145,9 @@ gametank gametank
 	.ddr_dout       (DDRAM_DOUT),
 	.ddr_dout_ready (DDRAM_DOUT_READY),
 	.ddr_busy       (DDRAM_BUSY),
+
+	.joy1 (joystick_0[7:0]),
+	.joy2 (joystick_1[7:0]),
 
 	.ce_pix  (ce_pix),
 	.hblank  (HBlank),

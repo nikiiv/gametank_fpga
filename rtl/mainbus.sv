@@ -47,6 +47,16 @@ module mainbus
     output logic [7:0]  dma_ctl,     // $2007 register (docs/HARDWARE.md)
     output logic [7:0]  bank_reg,    // $2005 register
 
+    // gamepad ports $2008/$2009 (reads only; side effects in rtl/pads.sv)
+    output logic        pad1_rd,
+    output logic        pad2_rd,
+    input  logic [7:0]  pad_q,
+
+    // 6522 VIA at $2800-$2FFF (addr & 15)
+    output logic        via_wen,
+    output logic        via_ren,
+    input  logic [7:0]  via_q,
+
     input  logic        irq,         // blitter IRQ (gated), VIA (M5)
     input  logic        nmi          // vsync NMI (from scanout, gated dma_ctl[2])
 );
@@ -114,6 +124,7 @@ wire vdma_sel  = (cpu_ab[15:14] == 2'b01);
 wire vram_sel  = vdma_sel && !dma_ctl[0] &&  dma_ctl[5];
 wire gram_sel  = vdma_sel && !dma_ctl[0] && !dma_ctl[5];
 wire param_sel = vdma_sel &&  dma_ctl[0];
+wire via_sel   = (cpu_ab[15:11] == 5'b00101);   // $2800-$2FFF
 
 assign bank_reg = banking;
 
@@ -126,12 +137,23 @@ always_ff @(posedge clk_sys) begin
     gram_we       <= cpu_ce && gram_sel  && cpu_we;
     gram_rd       <= cpu_ce && gram_sel  && !cpu_we;
     blit_param_we <= cpu_ce && param_sel && cpu_we;
+    pad1_rd       <= cpu_ce && (cpu_ab == 16'h2008) && !cpu_we;
+    pad2_rd       <= cpu_ce && (cpu_ab == 16'h2009) && !cpu_we;
+    // The VIA samples wen/ren at its phi2 edges (the strobes), so these are
+    // held as levels for the whole following window; the access commits at
+    // the next strobe (one CPU cycle late — invisible to the register-file
+    // usage that GameTank software makes of the VIA, see DEPENDENCIES.md).
+    if (cpu_ce) begin
+        via_wen <= via_sel && cpu_we;
+        via_ren <= via_sel && !cpu_we;
+    end
 end
 
 // Read-source select, latched at the strobe alongside the address so the
 // data mux below is loop-free (the core's AB is a function of DI on
 // vector/jump-target cycles).
-typedef enum logic [2:0] { SEL_RAM, SEL_CART, SEL_VRAM, SEL_GRAM, SEL_OPEN } rdsel_e;
+typedef enum logic [2:0] { SEL_RAM, SEL_CART, SEL_VRAM, SEL_GRAM,
+                           SEL_PAD, SEL_VIA, SEL_OPEN } rdsel_e;
 rdsel_e     rd_sel;
 logic [7:0] open_bus;
 
@@ -139,6 +161,8 @@ always_ff @(posedge clk_sys) begin
     if (cpu_ce) begin
         unique casez (cpu_ab)
             16'b000?_????_????_????: rd_sel <= SEL_RAM;   // $0000-$1FFF
+            16'b0010_0000_0000_100?: rd_sel <= SEL_PAD;   // $2008/$2009
+            16'b0010_1???_????_????: rd_sel <= SEL_VIA;   // $2800-$2FFF
             16'b01??_????_????_????: rd_sel <= vram_sel ? SEL_VRAM :
                                                gram_sel ? SEL_GRAM : SEL_OPEN;
             16'b1???_????_????_????: rd_sel <= SEL_CART;  // $8000-$FFFF
@@ -155,6 +179,8 @@ always_comb begin
         SEL_CART: cpu_di = cart_data;
         SEL_VRAM: cpu_di = vram_dout;
         SEL_GRAM: cpu_di = gram_dout;
+        SEL_PAD:  cpu_di = pad_q;
+        SEL_VIA:  cpu_di = via_q;
         default:  cpu_di = open_bus;
     endcase
 end

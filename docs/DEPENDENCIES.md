@@ -56,8 +56,15 @@ demand, never vendored. Audited 2026-07-06.
 - **License:** GPL 3.0 (stated in file header) — clean match for this repo. Note: *older* copies of Gideon's VIA (e.g. the X-HDL translation floating around in some cores) carry a "do not copy without written permission" header — do **not** substitute one of those.
 - **Survey result (2026-07-06):** evaluated Thomas Skibo's `via6522` (BSD-3, PET2001 lineage — solid, simpler; our fallback), MikeJ's `m6522` Verilog port (BSD-like, VIC-20/fpgaarcade lineage, used in hoglet's ice40 Atom), and misc smaller cores. Gideon's wins on accuracy pedigree + native-Verilog + GPL3.
 - **GameTank usage floor** (from GameTankEmulator `src/gte.cpp`): the emulator models the VIA as a bare register file with Port A bit-banged SPI (CLK=PA0, MOSI=PA1, CS=PA2, MISO=PA7) clocking the **cartridge bank shift register** on Flash2M carts; no timers/SR/IRQ are emulated, so no shipped software can depend on them. We vendor the full chip anyway (real hardware has it, cost is nil).
-- **Vendored (M1, 2026-07-06):** `src/macplus/via6522.v` → `rtl/via/via6522.v`, copied unmodified, upstream header preserved.
-- **Local modifications:** none planned.
+- **Vendored (M1, 2026-07-06):** `src/macplus/via6522.v` → `rtl/via/via6522.v`, upstream header preserved.
+- **Local modifications (M5, 2026-07-06):** `latch_reset_pattern` changed from
+  `wire` to `localparam` (Quartus 17 rejects non-constant declaration
+  initializers; value unchanged). The file must also be compiled as
+  SystemVerilog (`files.qip`) — it uses continuous assigns to variables.
+- **Integrated (M5):** at $2800–$2FFF (`addr & 15`), phi2 mapped to the CPU
+  cycle (`falling` = the RDY strobe), IRQB wire-ORed onto the CPU IRQ per the
+  schematic finding in HARDWARE.md §Interrupts. Port pins loop back the
+  VIA's own drive (pull-ups on inputs) until the M7 cart SPI takes Port A.
 
 ### DDR3 helper (`rtl/cart/ddram.sv`)
 - **Upstream pattern:** Sorgelig's `ddram.sv` as used in https://github.com/MiSTer-devel/AtariLynx_MiSTer (`rtl/ddram.sv`) — the reference implementation for OSD-download-to-DDR3 cart storage.

@@ -58,7 +58,7 @@ reg [7:0] ddra;
 reg [7:0] prb;
 reg [7:0] ddrb;
 
-wire [15:0] latch_reset_pattern = 16'h5550;
+localparam [15:0] latch_reset_pattern = 16'h5550;  // GameTank mod: was a wire; Quartus 17 requires a constant in declaration initializers
 wire [7:0]  last_data = 8'h55;
     
 reg [7:0] port_a_c = 8'h00;

@@ -208,13 +208,25 @@ Additional findings (M4, 2026-07-06, from `blitter.cpp`/`gte.cpp` re-read):
 
 SMS/Genesis-style DB9 pads with a select line, read at `$2008` (pad 1) /
 `$2009` (pad 2). Each read returns active-low button bits and **toggles that
-pad's select flip-flop** (74HCT74); reading one port resets the other's
-toggle. Bit layout per read (bit 7 = current select state):
+pad's select flip-flop**; reading one port resets the other's toggle. Bit
+layout per read:
 
 | Select LOW | Select HIGH |
 |---|---|
 | bit 4 = A, bit 5 = Start | bit 0 = Right, bit 1 = Left, bit 4 = B, bit 5 = C |
 | bit 2 = Down, bit 3 = Up | bit 2 = Down, bit 3 = Up |
+
+**Schematic detail (M5, 2026-07-06, `LogicBoard_smt/Gamepad_ports.kicad_sch`):**
+one 7474 holds both select FFs: `~GAMEPAD1R` clocks FF1 (D=~Q toggle) *and*
+clears FF2; `~GAMEPAD2R` symmetric. A 74573 per pad latches the byte at the
+read strobe: D0←DB9.4 (Right), D1←DB9.3 (Left), D2←DB9.2 (Down), D3←DB9.1
+(Up), D4←DB9.6 (A/B), D5←DB9.9 (Start/C), **D6 = "extra button" header**
+(3.3k pull-up — reads 1 with nothing fitted), **D7 = the select FF's Q,
+latched before the end-of-read toggle** (first read after the cross-reset
+returns select=0 data with bit7=0, then alternates). **Emulator divergence:**
+the emulator returns bit 7 (and 6) constantly 1 (`joystick_adapter.cpp` never
+sets mask bits 7/15 despite its own comment). RTL implements hardware truth;
+lockstep input carts must mask bit 7 before drawing.
 
 ## Cartridge — `gte.cpp:275–330, 380–460`
 
@@ -243,7 +255,7 @@ for the post-1.0 save milestone.
 
 | Line | Source |
 |---|---|
-| Main CPU IRQ | Blitter completion (enabled by DMA bit 6; cleared by TRIGGER writes). VIA IRQ presumably wire-ORs here — **open item (M5):** confirm from `Hardware/Combined/` schematic; the emulator never asserts a VIA IRQ. |
+| Main CPU IRQ | Blitter completion (enabled by DMA bit 6; cleared by TRIGGER writes). **Resolved (M5):** net `~IRQ` on `LogicBoard_smt/CPU_and_address_decode` wire-ORs (3.3k pull-up, open-drain) the **VIA IRQB**, the **cartridge slot's _IRQ pin (21)**, and the CPU's IRQB — so VIA and cart interrupts share the line with the blitter. The emulator never asserts a VIA IRQ (bare register file), so no shipped software depends on VIA timers. |
 | Main CPU NMI | Vsync (enabled by DMA bit 2) |
 | ACP IRQ | Periodic sample-rate counter |
 | ACP NMI | Main CPU write to `$2001` |

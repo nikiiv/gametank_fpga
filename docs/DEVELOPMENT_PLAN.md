@@ -92,13 +92,22 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
   — determinism rules in TESTING.md. Boot cart = blit_scene; animated
   blitter demo verified on the DE10 over HDMI.
 
-## M5 — Input & VIA
+## M5 — Input & VIA ✅ (completed 2026-07-06)
 
 - Controller port register block (`$2008`/`$2009` select logic) wired to
   MiSTer joystick inputs (gamepads are **not** behind the VIA)
 - 6522 VIA integrated (its cart-banking SPI role becomes live in M7)
 - Test cart polls pads; sim injects scripted input and verifies reads
 - **Done when:** scripted-input test cart passes; manual pad check on hardware.
+- **Done:** pad ports are hardware-true to `Gamepad_ports.kicad_sch` (one
+  7474: read toggles own select FF and clears the other's; D7 = latched
+  select state, D6 = extra-button header — both diverge from the emulator,
+  which returns constant 1s; lockstep carts mask bit 7). VIA integrated at
+  $2800-$2FFF with IRQB wire-ORed onto the CPU IRQ (schematic-confirmed,
+  M0 open item closed; cart slot IRQ joins in M7). Scripted-input tests:
+  unit (select FFs, cross-reset, VIA register file) + integration
+  (pads_demo indicators track injected input through the full video path).
+  pads_demo is the boot cart for the manual hardware check.
 
 ## M6 — Audio
 

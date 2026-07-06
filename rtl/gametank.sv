@@ -32,6 +32,10 @@ module gametank
     input  logic        ddr_dout_ready,
     input  logic        ddr_busy,
 
+    // gamepads (active high: 0=Right 1=Left 2=Down 3=Up 4=A 5=B 6=C 7=Start)
+    input  logic [7:0]  joy1,
+    input  logic [7:0]  joy2,
+
     output logic        ce_pix,
     output logic        hblank,
     output logic        hsync,
@@ -102,9 +106,87 @@ mainbus mainbus
     .dma_ctl       (dma_ctl),
     .bank_reg      (bank_reg),
 
-    .irq           (blit_irq),
+    .pad1_rd       (pad1_rd),
+    .pad2_rd       (pad2_rd),
+    .pad_q         (pad_q),
+
+    .via_wen       (via_wen),
+    .via_ren       (via_ren),
+    .via_q         (via_q),
+
+    .irq           (blit_irq | via_irq),   // wire-OR per HARDWARE.md
     .nmi           (vsync_nmi && dma_ctl[2])   // VSYNC_NMI enable
 );
+
+// Gamepads
+logic       pad1_rd, pad2_rd;
+logic [7:0] pad_q;
+
+pads pads
+(
+    .clk_sys (clk_sys),
+    .reset   (reset),
+    .pad1_rd (pad1_rd),
+    .pad2_rd (pad2_rd),
+    .joy1    (joy1),
+    .joy2    (joy2),
+    .pad_q   (pad_q)
+);
+
+// 6522 VIA at $2800-$2FFF. Its phi2 is the CPU cycle: `falling` = the RDY
+// strobe (end of cycle, when writes commit), `rising` = mid-window. Port A
+// becomes the cartridge bank SPI in M7; until then ports float high.
+logic       via_wen, via_ren;
+logic [7:0] via_q;
+logic       via_irq;
+logic       via_rising;
+
+always_ff @(posedge clk_sys)
+    via_rising <= (ce_div == 3'd3);
+
+// Port pins: reads return the VIA's own drive on output bits and pull-ups
+// on inputs (the M7 cart SPI adds MISO on PA7).
+logic [7:0] via_pa_o, via_pa_t, via_pb_o, via_pb_t;
+wire  [7:0] via_pa_i = (via_pa_o & via_pa_t) | ~via_pa_t;
+wire  [7:0] via_pb_i = (via_pb_o & via_pb_t) | ~via_pb_t;
+
+/* verilator lint_off PINCONNECTEMPTY */
+via6522 via
+(
+    .clock     (clk_sys),
+    .rising    (via_rising),
+    .falling   (cpu_ce),
+    .reset     (reset),
+
+    .addr      (win_addr[3:0]),
+    .wen       (via_wen),
+    .ren       (via_ren),
+    .data_in   (win_din),
+    .data_out  (via_q),
+
+    .phi2_ref  (),
+
+    .port_a_o  (via_pa_o),
+    .port_a_t  (via_pa_t),
+    .port_a_i  (via_pa_i),
+    .port_b_o  (via_pb_o),
+    .port_b_t  (via_pb_t),
+    .port_b_i  (via_pb_i),
+
+    .ca1_i     (1'b1),
+    .ca2_o     (),
+    .ca2_i     (1'b1),
+    .ca2_t     (),
+    .cb1_o     (),
+    .cb1_i     (1'b1),
+    .cb1_t     (),
+    .cb2_o     (),
+    .cb2_i     (1'b1),
+    .cb2_t     (),
+
+    .irq       (via_irq)
+);
+/* verilator lint_on PINCONNECTEMPTY */
 
 // Blitter and GRAM
 logic [18:0] blit_gram_addr;
