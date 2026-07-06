@@ -36,6 +36,16 @@
  * If IMPLEMENT_NOPS is defined, the state machine is modified accordingly.
  */
 
+/*
+ * GameTank MiSTer local modifications (recorded in docs/DEPENDENCIES.md):
+ *   1. WAI ($CB) — W65C02S semantics: stall until IRQ or NMI; an IRQ with
+ *      I=1 resumes execution at the next instruction without vectoring.
+ *   2. STP ($DB) — halt until reset.
+ *   3. IMPLEMENT_CORRECT_BCD_FLAGS enabled (W65C02S-accurate BCD N/Z).
+ *   4. D flag cleared when an interrupt/BRK is taken (65C02 behavior;
+ *      the NMOS 6502 leaves it unchanged).
+ */
+
 `define IMPLEMENT_NOPS
 
 /*
@@ -46,7 +56,7 @@
  * If IMPLEMENT_CORRECT_BCD_FLAGS is defined, this additional logic is added
  */
 
-// `define IMPLEMENT_CORRECT_BCD_FLAGS
+`define IMPLEMENT_CORRECT_BCD_FLAGS
 
 module cpu_65c02( clk, reset, AB, DI, DO, WE, IRQ, NMI, RDY, SYNC );
 
@@ -261,7 +271,9 @@ parameter
     IND0   = 6'd50, // (ZP)    - fetch ZP address, and send to ALU (+0)
     JMPIX0 = 6'd51, // JMP (,X)- fetch LSB and send to ALU (+X)
     JMPIX1 = 6'd52, // JMP (,X)- fetch MSB and send to ALU (+Carry)
-    JMPIX2 = 6'd53; // JMP (,X)- Wait for ALU (only if needed)
+    JMPIX2 = 6'd53, // JMP (,X)- Wait for ALU (only if needed)
+    WAI0   = 6'd54, // WAI     - wait for IRQ or NMI (GameTank mod)
+    STP0   = 6'd55; // STP     - halted until reset (GameTank mod)
 
 `ifdef SIM
 
@@ -326,6 +338,8 @@ always @*
             JMPIX0: statename = "JMPIX0";
             JMPIX1: statename = "JMPIX1";
             JMPIX2: statename = "JMPIX2";
+            WAI0:   statename = "WAI0";
+            STP0:   statename = "STP0";
 
     endcase
 
@@ -455,7 +469,9 @@ always @*
 
         REG,
         READ,
-        WRITE:          AB = { ABH, ABL };
+        WRITE,
+        WAI0,
+        STP0:           AB = { ABH, ABL };
 
         default:        AB = PC;
     endcase
@@ -885,7 +901,9 @@ always @(posedge clk)
  * Update D flag
  */
 always @(posedge clk )
-    if( state == RTI2 )
+    if( state == BRK3 )         // GameTank mod: 65C02 clears D on interrupts
+        D <= 0;
+    else if( state == RTI2 )
         D <= DIMUX[3];
     else if( state == DECODE ) begin
         if( sed ) D <= 1;
@@ -956,6 +974,8 @@ always @(posedge clk or posedge reset)
                 8'b0110_0000:   state <= RTS0;
                 8'b0110_1100:   state <= JMPI0;
                 8'b0111_1100:   state <= JMPIX0;
+                8'b1100_1011:   state <= WAI0;  // WAI (GameTank mod)
+                8'b1101_1011:   state <= STP0;  // STP (GameTank mod)
 `ifdef IMPLEMENT_NOPS
                 8'bxxxx_xx11:   state <= REG;   // (NOP1: 3/7/B/F column)
                 8'bxxx0_0010:   state <= FETCH; // (NOP2: 2 column, 4 column handled correctly below)
@@ -1061,6 +1081,9 @@ always @(posedge clk or posedge reset)
         BRK2    : state <= BRK3;
         BRK3    : state <= JMP0;
 
+        WAI0    : state <= (IRQ | NMI_edge) ? DECODE : WAI0;  // GameTank mod
+        STP0    : state <= STP0;                              // GameTank mod
+
     endcase
 
 
@@ -1081,6 +1104,7 @@ always @(posedge clk or posedge reset)
         RTI4,
         JMP1,
         BRA2   : SYNC <= 1'b1;
+        WAI0   : SYNC <= (IRQ | NMI_edge);  // GameTank mod: like REG on wake
         default: SYNC <= 1'b0;
     endcase
 

@@ -25,11 +25,30 @@ demand, never vendored. Audited 2026-07-06.
 - **License:** permissive attribution notice (Arlet Ottens): *"Feel free to use this code in any project (commercial or not), as long as you keep this message, and the copyright notice."* GPLv3-compatible; headers preserved.
 - **Why not Arlet's dedicated `verilog-65C02-microcode`:** it carries **no license grant** (all rights reserved by default) — unusable in a GPLv3 repo without written permission; also fewer field deployments and a non-W65C02S cycle profile.
 - **Vendored (M1, 2026-07-06):** `cpu_65c02.v`, `ALU.v` copied unmodified, upstream headers preserved.
-- **Planned local modifications (M2, each recorded here when made):**
-  1. Add **WAI** ($CB) — hard requirement: GameTank SDK `wait()`, text rendering, and audio firmware idle loops use it. Must implement W65C02S semantics incl. IRQ-with-I=1 resuming without vectoring.
-  2. Add **STP** ($DB) — SDK exposes `stop()`; unused in known software but cheap.
-  3. Enable `IMPLEMENT_CORRECT_BCD_FLAGS` (off by default; needed for W65C02S-accurate BCD N/Z and the Klaus 65C02 test).
-  4. Rockwell `BBR/BBS/SMB/RMB`: **not implemented** (no GameTank software uses them; they run as correct-length NOPs via `IMPLEMENT_NOPS`). Post-1.0 fidelity item.
+- **Local modifications (M2, 2026-07-06 — all in `cpu_65c02.v`, marked "GameTank mod"):**
+  1. **WAI** ($CB): new state `WAI0` (6'd54); decode entry placed before the
+     NOP1 catch-all. Stalls with the bus parked until `IRQ | NMI_edge`; the
+     existing DECODE interrupt logic then either vectors (I=0 IRQ, NMI) with
+     return address = instruction after WAI, or falls through to the next
+     instruction (IRQ with I=1) — W65C02S semantics. `SYNC` asserts on wake
+     (REG-like).
+  2. **STP** ($DB): new state `STP0` (6'd55), self-loops until reset.
+  3. `IMPLEMENT_CORRECT_BCD_FLAGS` enabled (W65C02S-accurate BCD N/Z).
+  4. **D flag cleared at BRK3** — the 65C02 clears decimal mode when taking
+     BRK/IRQ/NMI/reset; the vendored core didn't (NMOS behavior). Found by
+     the Klaus 65C02 extended test (BRK pass 2, `$ff-decmode` flag check).
+  5. Rockwell `BBR/BBS/SMB/RMB`: **not implemented** (no GameTank software
+     uses them; they run as correct-length NOPs via `IMPLEMENT_NOPS`).
+     Post-1.0 fidelity item.
+- **Import gate (sim/, runs in CI):** Klaus `6502_functional_test.bin` stock
+  (success `$3469`, ~96.2M cycles) + 65C02 extended test reassembled from the
+  amb5l CA65 port @ `966b1a35049f9d8be44ad092ec6d43d5ba1831b3` with
+  `rkwl_wdc_op = 0` (success label planted at build time, ~66.8M cycles).
+  Note: `wdc_op = 1` only makes the extended test *skip* $CB/$DB (Klaus
+  covers WAI/STP in the separate interrupt test, which has no CA65 port) —
+  actual WAI/STP semantics are covered by our directed test
+  (`sim/unit/test_cpu_wai_stp.cpp`): IRQ-wake without vectoring (I=1),
+  IRQ-wake with vectoring and resume (I=0), NMI wake, STP halt/reset-revive.
 
 ### 6522 VIA (`rtl/via/via6522.v`)
 - **Upstream:** https://github.com/harbaum/nanomac — `src/macplus/via6522.v`, Till Harbaum's Verilog port of **Gideon Zweijtzer's** heavily reverse-engineered 6522 (1541 Ultimate lineage; accuracy refinements credited to gyurco/Gyorgy Szombathelyi).

@@ -16,6 +16,7 @@
 
 #include <verilated.h>
 #include "Vgametank.h"
+#include "Vgametank___024root.h"
 
 struct Pixel {
     uint8_t r, g, b;
@@ -27,9 +28,23 @@ public:
     Vgametank top;
     uint64_t  cycles = 0;
 
+    // Cartridge backing for the abstract cart bus ($8000-$FFFF window).
+    // Defaults to 0xFF (floating bus, matching the emu wrapper's tie-off).
+    std::vector<uint8_t> cart = std::vector<uint8_t>(32768, 0xFF);
+
+    void loadCart(const std::string& path) {
+        FILE* f = std::fopen(path.c_str(), "rb");
+        if (!f) { std::perror(path.c_str()); std::exit(1); }
+        size_t n = std::fread(cart.data(), 1, cart.size(), f);
+        std::fclose(f);
+        if (n == 0) { std::fprintf(stderr, "empty cart %s\n", path.c_str()); std::exit(1); }
+    }
+
     // One clk_sys cycle. onPixel fires at the posedge where ce_pix is high,
     // with output values as they are latched by the framework.
     void tick(const std::function<void(const Pixel&)>& onPixel = nullptr) {
+        top.cart_data = cart[top.cart_addr & 0x7FFF];
+
         top.clk_sys = 0;
         top.eval();
         if (top.ce_pix && onPixel) {
@@ -46,6 +61,14 @@ public:
         top.reset = 1;
         for (int i = 0; i < n; i++) tick();
         top.reset = 0;
+    }
+
+    // Test-only visibility into the console (verilator public_flat_rd).
+    uint8_t sysram(uint16_t phys) const {
+        return top.rootp->gametank__DOT__mainbus__DOT__sysram[phys & 0x7FFF];
+    }
+    uint8_t banking() const {
+        return top.rootp->gametank__DOT__mainbus__DOT__banking;
     }
 };
 

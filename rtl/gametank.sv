@@ -17,6 +17,10 @@ module gametank
     input  logic        clk_sys,
     input  logic        reset,
 
+    // cartridge bus ($8000-$FFFF window; sim-backed until the M7 DDR3 path)
+    output logic [14:0] cart_addr,
+    input  logic [7:0]  cart_data,
+
     output logic        ce_pix,
     output logic        hblank,
     output logic        hsync,
@@ -32,6 +36,35 @@ module gametank
 
 assign audio_l = '0;
 assign audio_r = '0;
+
+// 3.579545 MHz clock-enable for the console (clk_sys / 8): the CPU's RDY
+// strobe. All bus transactions latch at this strobe (see mainbus.sv).
+logic [2:0] ce_div;
+logic       cpu_ce;
+
+always_ff @(posedge clk_sys) begin
+    if (reset) begin
+        ce_div <= '0;
+        cpu_ce <= 1'b0;
+    end
+    else begin
+        ce_div <= ce_div + 3'd1;
+        cpu_ce <= (ce_div == 3'd7);
+    end
+end
+
+mainbus mainbus
+(
+    .clk_sys   (clk_sys),
+    .reset     (reset),
+    .cpu_ce    (cpu_ce),
+
+    .cart_addr (cart_addr),
+    .cart_data (cart_data),
+
+    .irq       (1'b0),   // blitter IRQ arrives in M4
+    .nmi       (1'b0)    // vsync NMI arrives in M3/M4
+);
 
 testpattern testpattern
 (

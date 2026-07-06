@@ -1,0 +1,5 @@
+`verilator_config
+// Vendored third-party RTL is exempt from our -Wall policy (never linted
+// or fixed; see docs/DEPENDENCIES.md and docs/TESTING.md).
+lint_off -file "*/rtl/cpu/*"
+lint_off -file "*/rtl/via/*"

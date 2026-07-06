@@ -115,6 +115,10 @@ gametank gametank
 	.clk_sys (clk_sys),
 	.reset   (reset),
 
+	// No cart yet on hardware (OSD .gtr loading lands in M7); reads float.
+	.cart_addr (),
+	.cart_data (8'hFF),
+
 	.ce_pix  (ce_pix),
 	.hblank  (HBlank),
 	.hsync   (HSync),

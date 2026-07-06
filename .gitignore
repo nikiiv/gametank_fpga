@@ -25,12 +25,17 @@ sim/out/
 *.fst.hier
 
 # Test artifacts
+sim/testroms/*.gtr
+sim/testroms/**/*.o
 sim/testroms/*.gtr.build/
 sim/**/actual_*.png
 sim/**/diff_*.png
 
 # Vendored-at-test-time reference emulator (cloned by tools/gametank-test)
 sim/GameTankEmulator/
+
+# Klaus test material (cloned/built on demand by sim/Makefile)
+sim/klaus/
 
 # Editors / OS
 .DS_Store

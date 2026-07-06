@@ -31,7 +31,7 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
   Klaus binaries are fetched on demand at the M2 import gate, per
   DEPENDENCIES.md (test infrastructure is not vendored).
 
-## M2 — CPU & memory
+## M2 — CPU & memory ✅ (completed 2026-07-06)
 
 - 65C02 integrated with address decode + BRAM system RAM
 - Patch/verify WDC (`WAI`/`STP`) and Rockwell (`BBR/BBS/SMB/RMB`) support per
@@ -42,6 +42,13 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
 - First self-written test cart (built with cc65/GameTank SDK) executes and
   writes a known pattern to RAM; sim asserts on it
 - **Done when:** Klaus gate + first test cart pass in CI.
+- **Done:** CPU patched (WAI/STP/BCD flags + D-clear-on-interrupt, found by
+  the Klaus 65C02 gate — see DEPENDENCIES.md §CPU); both Klaus tests pass
+  (96.2M / 66.8M cycles); directed WAI/STP tests cover the W65C02S semantics
+  Klaus skips. `rtl/mainbus.sv` implements the RDY-gated bus (transactions
+  latch at the strobe — DIMUX-derived addresses are only valid then), $2005
+  RAM banking (4×8K into 32 KB BRAM), open-bus reads, and the abstract cart
+  bus (sim-backed until M7). First cart: `sim/testroms/ram_pattern`.
 
 ## M3 — Video
 

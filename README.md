@@ -6,7 +6,7 @@ Shaffer's open-source 8-bit game console (W65C02S @ 3.58 MHz, blitter-driven
 the [MiSTer](https://mister-devel.github.io/MkDocs_MiSTer/) platform
 (DE10-Nano). No SDRAM add-on required.
 
-**Status: M1 (scaffold & first `.rbf`) — test-pattern core builds and passes CI; next up M2, CPU & memory.** See
+**Status: M2 (CPU & memory) complete — 65C02 + banked RAM run cc65 test carts in sim; next up M3, video.** See
 [docs/DEVELOPMENT_PLAN.md](docs/DEVELOPMENT_PLAN.md) for the milestone
 roadmap, [docs/REQUIREMENTS.md](docs/REQUIREMENTS.md) for scope and fidelity
 targets, and [docs/HARDWARE.md](docs/HARDWARE.md) for the reverse-engineered
