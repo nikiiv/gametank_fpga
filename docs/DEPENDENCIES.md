@@ -12,13 +12,19 @@ demand, never vendored. Audited 2026-07-06.
 - **Commit:** `0eccddb6d7708157291bdcfbcc8a2c7f4a829d41` (2026-07-01)
 - **License:** GPL-2.0 top-level; per-file: `sys/hps_io.sv` GPL-3.0, `sys/ascal.vhd` permissive (temlib). Combined work distributed under GPLv3.
 - **Rules:** `sys/` is never modified; refreshed wholesale from upstream. Core files renamed Template→GameTank.
-- **Local modifications:** none yet (M1 will record the rename set here).
+- **Vendored set (M1, 2026-07-06):** `sys/` wholesale (unmodified); `Template.qpf/.qsf/.sdc/.srf` → `GameTank.qpf/.qsf/.sdc/.srf`; `Template.sv` → `GameTank.sv`; `files.qip`; `rtl/pll.qip`, `rtl/pll.v`, `rtl/pll/` (the core PLL IP — `sys/pll_q17.qip` hard-references `rtl/pll.qip`, so its location is fixed). Not copied: `Template_Q13.*` (Quartus 13 variants), the `rtl/` demo core (`mycore.v`, `lfsr.v`, `cos.sv` — replaced by our own `rtl/testpattern.sv`), `clean.bat`, `Readme.md`.
+- **Local modifications:**
+  1. `GameTank.qpf`: `PROJECT_REVISION` "Template" → "GameTank". `.qsf/.sdc/.srf` content unchanged.
+  2. `GameTank.sv`: `emu` body rewritten for GameTank (config string, `rtl/gametank.sv` instantiation); framework boilerplate (port include, unused-port defaults, hps_io/PLL/video hookup) retained from Template.
+  3. `files.qip`: rewritten to list GameTank core files.
+  4. `rtl/pll/pll_0002.v`: `output_clock_frequency0` 20 MHz → **28.636364 MHz** (8× NTSC colorburst; 50 MHz × 63/110 — exact on Cyclone V, VCO 1575 MHz). Matching cosmetic edit to the retrieval info in `rtl/pll.v`.
 
 ### CPU — 65C02 (`rtl/cpu/cpu_65c02.v`, `rtl/cpu/ALU.v`)
 - **Upstream:** https://github.com/hoglet67/verilog-6502 (Arlet Ottens' 6502 core + 65C02 extensions by David Banks & Ed Spittles)
 - **Commit:** `ef2cc5ab453b0c35e8c9f459b52eb72be70b71d7` (2025-12-14 — includes the RDY/DIHOLD and TSB/TRB-with-RDY fixes)
 - **License:** permissive attribution notice (Arlet Ottens): *"Feel free to use this code in any project (commercial or not), as long as you keep this message, and the copyright notice."* GPLv3-compatible; headers preserved.
 - **Why not Arlet's dedicated `verilog-65C02-microcode`:** it carries **no license grant** (all rights reserved by default) — unusable in a GPLv3 repo without written permission; also fewer field deployments and a non-W65C02S cycle profile.
+- **Vendored (M1, 2026-07-06):** `cpu_65c02.v`, `ALU.v` copied unmodified, upstream headers preserved.
 - **Planned local modifications (M2, each recorded here when made):**
   1. Add **WAI** ($CB) — hard requirement: GameTank SDK `wait()`, text rendering, and audio firmware idle loops use it. Must implement W65C02S semantics incl. IRQ-with-I=1 resuming without vectoring.
   2. Add **STP** ($DB) — SDK exposes `stop()`; unused in known software but cheap.
@@ -31,6 +37,7 @@ demand, never vendored. Audited 2026-07-06.
 - **License:** GPL 3.0 (stated in file header) — clean match for this repo. Note: *older* copies of Gideon's VIA (e.g. the X-HDL translation floating around in some cores) carry a "do not copy without written permission" header — do **not** substitute one of those.
 - **Survey result (2026-07-06):** evaluated Thomas Skibo's `via6522` (BSD-3, PET2001 lineage — solid, simpler; our fallback), MikeJ's `m6522` Verilog port (BSD-like, VIC-20/fpgaarcade lineage, used in hoglet's ice40 Atom), and misc smaller cores. Gideon's wins on accuracy pedigree + native-Verilog + GPL3.
 - **GameTank usage floor** (from GameTankEmulator `src/gte.cpp`): the emulator models the VIA as a bare register file with Port A bit-banged SPI (CLK=PA0, MOSI=PA1, CS=PA2, MISO=PA7) clocking the **cartridge bank shift register** on Flash2M carts; no timers/SR/IRQ are emulated, so no shipped software can depend on them. We vendor the full chip anyway (real hardware has it, cost is nil).
+- **Vendored (M1, 2026-07-06):** `src/macplus/via6522.v` → `rtl/via/via6522.v`, copied unmodified, upstream header preserved.
 - **Local modifications:** none planned.
 
 ### DDR3 helper (`rtl/cart/ddram.sv`)

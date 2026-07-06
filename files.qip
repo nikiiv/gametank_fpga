@@ -1,0 +1,4 @@
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/testpattern.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/gametank.sv
+set_global_assignment -name SDC_FILE GameTank.sdc
+set_global_assignment -name SYSTEMVERILOG_FILE GameTank.sv

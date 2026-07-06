@@ -15,7 +15,7 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
   inside their owning milestones (NTSC line timing & palette variant → M3,
   VIA IRQ wiring → M5, ACP rate encoding → M6).
 
-## M1 — Scaffold builds
+## M1 — Scaffold builds ✅ (completed 2026-07-06)
 
 - Vendor MiSTer `Template_MiSTer` (`sys/` + `emu` top), rename to GameTank
 - Vendor CPU core (per DEPENDENCIES.md decision), VIA source, Klaus binaries
@@ -24,6 +24,12 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
 - `tools/gametank-test` compiles a trivial Verilator sim of the (empty) core
 - GitHub Actions workflow runs the Verilator smoke test
 - **Done when:** `.rbf` boots to test pattern on the DE10; CI green.
+- **Done:** system clock 28.636364 MHz (8× colorburst, exact PLL ratio
+  63/110); core boundary is `rtl/gametank.sv` (shared by `emu` and the sim
+  harness); test pattern verified pixel-identical in Verilator frame capture
+  and on-hardware screenshot (`/dev/MiSTer_cmd` load + screenshot).
+  Klaus binaries are fetched on demand at the M2 import gate, per
+  DEPENDENCIES.md (test infrastructure is not vendored).
 
 ## M2 — CPU & memory
 

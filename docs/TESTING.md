@@ -59,6 +59,18 @@ push/PR. Ubuntu runner: apt/verilator + SDL2 + cc65, build headless emulator,
 run `tools/gametank-test all`. No Quartus in CI — synthesis is local via
 `tools/gametank-build`.
 
+## Sim layout (established in M1)
+
+`sim/Makefile` (driven by `tools/gametank-test`) exposes `unit` /
+`integration` / `system` targets. The Verilator top is `rtl/gametank.sv`
+itself — the core boundary; `sys/` is never simulated. Each test is a
+standalone C++ program (`sim/unit/test_<name>.cpp`,
+`sim/integration/test_<name>.cpp`) built on `sim/common/sim_harness.h`,
+which clocks the core and samples video exactly as the framework does
+(posedge + `ce_pix`), and provides `CHECK`, frame capture, and PPM dumping.
+Register new tests by adding the name to `UNIT_TESTS` / `INTEGRATION_TESTS`
+in `sim/Makefile`; `--test NAME` filtering maps to `make TEST=NAME`.
+
 ## Adding a test
 
 1. Write a minimal test cart in `sim/testroms/<name>/` (cc65 project, makefile
