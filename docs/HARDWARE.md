@@ -273,8 +273,10 @@ for the post-1.0 save milestone.
 
 **Implemented (M7, `rtl/cart.sv`):** image in HPS DDR3 at byte
 `0x3010_0000` behind a round-robin DDRAM arbiter shared with GRAM
-(`rtl/ddr_mux.sv`); type inferred from `.gtr` size like the emulator
-(8 KB / 32 KB / else Flash2M — RAM32K deferred post-1.0 with flash
+(`rtl/ddr_mux.sv`); type inferred from `.gtr` size like the emulator:
+≤32 KB = EEPROM mirrored end-aligned across the window (for
+power-of-two sizes exactly `addr & (size-1)` — 8/16/32 KB carts all
+exist in the wild), else Flash2M (RAM32K deferred post-1.0 with flash
 writes). The 74HC595 shift register is modeled bit-true on the VIA Port A
 pins (shift on PA0 rise with pre-edge PA1, latch on PA2 rise, bit 7
 forced high). Latency: $C000–$FFFF is copied to BRAM once per download

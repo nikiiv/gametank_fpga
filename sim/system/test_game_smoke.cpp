@@ -10,7 +10,10 @@ int main(int argc, char** argv) {
 
     FILE* f = std::fopen(argv[1], "rb");
     if (!f) { std::perror(argv[1]); return 1; }
-    std::vector<uint8_t> img(2 * 1024 * 1024, 0xFF);
+    std::fseek(f, 0, SEEK_END);
+    long sz = std::ftell(f);
+    std::rewind(f);
+    std::vector<uint8_t> img((size_t)sz);   // real size — it selects the type
     std::fread(img.data(), 1, img.size(), f);
     std::fclose(f);
 

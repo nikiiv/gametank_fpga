@@ -3,10 +3,12 @@
 //  cart bus (HARDWARE.md §Cartridge; emulator reference gte.cpp:275-330).
 //
 //  Formats (inferred from download size, as the emulator does):
-//    8 KB  EEPROM  — image mirrored across the whole $8000-$FFFF window
-//    32 KB EEPROM  — image mapped 1:1
-//    2 MB  Flash2M — $C000-$FFFF fixed last 16 KB, $8000-$BFFF a 16 KB
-//                    bank selected by bank_mask[6:0]
+//    <= 32 KB EEPROM — image mirrored across $8000-$FFFF, end-aligned at
+//                      $FFFF like the emulator's mapping; for power-of-two
+//                      sizes that is exactly `addr & (size-1)` (8 K, 16 K
+//                      and 32 K carts all exist in the wild)
+//    else    Flash2M — $C000-$FFFF fixed last 16 KB, $8000-$BFFF a 16 KB
+//                      bank selected by bank_mask[6:0]
 //
 //  The 8-bit bank register is a 74HC595 loaded by VIA Port A bit-banged
 //  SPI: PA0 = shift clock, PA1 = data, PA2 = latch (also flash CS). Shift
@@ -80,7 +82,7 @@ module cart
 // lower (the M7 fill bug).
 localparam logic [28:0] CART_BASE_W = 29'h0602_0000;
 
-typedef enum logic [1:0] { T_EEPROM8K, T_EEPROM32K, T_FLASH2M } cart_t;
+typedef enum logic [0:0] { T_EEPROM, T_FLASH2M } cart_t;
 
 // ---------------------------------------------------------------------------
 // Bank shift register (74HC595 on VIA Port A)
@@ -126,23 +128,21 @@ logic [63:0] buf_d [0:1];
 logic [18:0] buf_tag [0:1];
 logic [1:0]  buf_v;
 
-// image byte offset of a banked-window ($8000-$BFFF) access
+// image byte offset of a banked-window ($8000-$BFFF) access;
+// eep_mask = pow2(size)-1 for EEPROM carts (mirror mask)
 function automatic logic [20:0] img_off(input cart_t t, input logic [6:0] bank,
+                                        input logic [14:0] mask,
                                         input logic [13:0] a);
-    case (t)
-        T_FLASH2M:   img_off = {bank, a};
-        T_EEPROM32K: img_off = {7'd0, a};
-        default:     img_off = {8'd0, a[12:0]};   // 8 KB mirror
-    endcase
+    if (t == T_FLASH2M) img_off = {bank, a};
+    else                img_off = {6'd0, {1'b0, a} & mask};
 endfunction
 
 // fixed-bank fill source (byte offset of the $C000 region in the image)
-function automatic logic [20:0] fill_src(input cart_t t, input logic [13:0] i);
-    case (t)
-        T_FLASH2M:   fill_src = {7'h7F, i};       // last 16 KB
-        T_EEPROM32K: fill_src = {7'd1, i};        // upper 16 KB
-        default:     fill_src = {8'd0, i[12:0]};  // 8 KB mirrored ×2
-    endcase
+function automatic logic [20:0] fill_src(input cart_t t,
+                                         input logic [14:0] mask,
+                                         input logic [13:0] i);
+    if (t == T_FLASH2M) fill_src = {7'h7F, i};    // last 16 KB
+    else                fill_src = {6'd0, ({1'b1, i}) & mask}; // $C000+i
 endfunction
 
 // ---------------------------------------------------------------------------
@@ -150,7 +150,8 @@ endfunction
 // ---------------------------------------------------------------------------
 logic        dl_active_q = 1'b0;
 logic [21:0] dl_size     = '0;         // bytes (max addr written + 1)
-cart_t       ctype       = T_EEPROM32K;
+cart_t       ctype       = T_EEPROM;
+logic [14:0] eep_mask    = 15'h7FFF;   // pow2(size)-1, EEPROM mirror mask
 logic        present_r /*verilator public_flat_rd*/ = 1'b0;
 assign cart_present = present_r;
 
@@ -171,7 +172,7 @@ assign dl_wait = dl_active_q || dlw_pend || filling;
 // ---------------------------------------------------------------------------
 // Console read service
 // ---------------------------------------------------------------------------
-wire [20:0] rd_off  = img_off(ctype, bank_mask[6:0], cart_addr[13:0]);
+wire [20:0] rd_off  = img_off(ctype, bank_mask[6:0], eep_mask, cart_addr[13:0]);
 wire [18:0] rd_word = {1'b0, rd_off[20:3]};
 
 wire hit = buf_v[rd_word[0]] && (buf_tag[rd_word[0]] == rd_word);
@@ -193,7 +194,7 @@ assign cart_data  = serve_fixed ? fixed_qw[fx_lane*8 +: 8] : bank_q;
 typedef enum logic [2:0] { IDLE, DLW, FILL_CMD, FILL_DATA, FETCH }
     dstate_t;
 
-wire [20:0] fill_off = fill_src(ctype, fill_idx);   // Quartus 17 can't
+wire [20:0] fill_off = fill_src(ctype, eep_mask, fill_idx);   // Quartus 17 can't
 wire        fetch_other = ~miss_word[0];            // bit-select a call
 dstate_t st /*verilator public_flat_rd*/ = IDLE;
 
@@ -247,8 +248,11 @@ always_ff @(posedge clk_sys) begin
             dl_size <= {1'b0, dl_addr} + 22'd1;
     end
     if (dl_end) begin
-        ctype    <= (dl_size <= 22'h02000) ? T_EEPROM8K  :
-                    (dl_size <= 22'h08000) ? T_EEPROM32K : T_FLASH2M;
+        ctype    <= (dl_size <= 22'h08000) ? T_EEPROM : T_FLASH2M;
+        // smallest power-of-two mirror covering the image (min 4 KB)
+        eep_mask <= (dl_size <= 22'h01000) ? 15'h0FFF :
+                    (dl_size <= 22'h02000) ? 15'h1FFF :
+                    (dl_size <= 22'h04000) ? 15'h3FFF : 15'h7FFF;
         filling  <= 1'b1;
         fill_idx <= '0;
     end
