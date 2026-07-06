@@ -1,0 +1,60 @@
+#!/usr/bin/env bash
+# tools/gametank-test
+# Run the Verilator-based test suite. No Quartus, no Docker — host tools only.
+# Run from the repo root.
+#
+# Usage: gametank-test [unit|integration|system|all] [--test NAME] [--jobs N]
+#   unit          testbenches for blocks we wrote (blitter, video timing, decode)
+#   integration   full-system sim: test carts + lockstep compare vs GameTankEmulator
+#   system        long-running real-game runs with screenshot checkpoints
+#   all           unit + integration (default; system is opt-in, it's slow)
+#   --test NAME   run a single test by name
+#   --jobs N      parallel build jobs (default: nproc)
+#
+# Prerequisites (see README.md → Tools):
+#   verilator, make, a C++17 compiler, sdl2 (emulator), cc65 (test carts)
+
+set -euo pipefail
+
+SUITE="all"
+TEST_FILTER=""
+JOBS="$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)"
+
+while [[ $# -gt 0 ]]; do
+    case "$1" in
+        unit|integration|system|all) SUITE="$1" ;;
+        --test) TEST_FILTER="$2"; shift ;;
+        --jobs) JOBS="$2"; shift ;;
+        -h|--help)
+            sed -n '2,15p' "$0" | sed 's/^# \?//'
+            exit 0
+            ;;
+        *) echo "unknown arg: $1" >&2; exit 2 ;;
+    esac
+    shift
+done
+
+if [[ ! -d sim ]]; then
+    echo "ERROR: sim/ not found. Run from the gametank_fpga repo root." >&2
+    exit 1
+fi
+
+command -v verilator >/dev/null || {
+    echo "ERROR: verilator not found. Install it first (macOS: brew install verilator)." >&2
+    exit 1
+}
+
+echo ">>> verilator: $(verilator --version)"
+echo ">>> suite: ${SUITE}${TEST_FILTER:+ (filter: ${TEST_FILTER})}"
+
+MAKE_ARGS=(-C sim -j "${JOBS}")
+[[ -n "${TEST_FILTER}" ]] && MAKE_ARGS+=("TEST=${TEST_FILTER}")
+
+case "${SUITE}" in
+    unit)        make "${MAKE_ARGS[@]}" unit ;;
+    integration) make "${MAKE_ARGS[@]}" integration ;;
+    system)      make "${MAKE_ARGS[@]}" system ;;
+    all)         make "${MAKE_ARGS[@]}" unit integration ;;
+esac
+
+echo ">>> All requested tests passed."

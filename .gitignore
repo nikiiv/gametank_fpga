@@ -1,0 +1,37 @@
+# Quartus build outputs
+db/
+incremental_db/
+output_files/
+*.qws
+*.rpt
+*.summary
+*.smsg
+*.jdi
+*.pin
+*.sld
+*.done
+c5_pin_model_dump.txt
+hps_isw_handoff/
+.qsys_edit/
+
+# Verilator / simulation outputs
+sim/obj_dir/
+sim/**/obj_dir/
+sim/out/
+*.vcd
+*.fst
+*.fst.hier
+
+# Test artifacts
+sim/testroms/*.gtr.build/
+sim/**/actual_*.png
+sim/**/diff_*.png
+
+# Vendored-at-test-time reference emulator (cloned by tools/gametank-test)
+sim/GameTankEmulator/
+
+# Editors / OS
+.DS_Store
+*.swp
+.vscode/
+.idea/

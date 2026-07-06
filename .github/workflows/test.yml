@@ -1,0 +1,32 @@
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install toolchain
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            verilator make g++ cc65 libsdl2-dev libsdl2-image-dev
+
+      - name: Versions
+        run: |
+          verilator --version
+          cc65 --version || true
+
+      # M1+: builds test carts, headless emulator, and runs unit+integration.
+      # Until sim/Makefile lands this is a no-op guarded step.
+      - name: Run test suite
+        run: |
+          if [ -f sim/Makefile ]; then
+            ./tools/gametank-test all
+          else
+            echo "sim/Makefile not present yet (pre-M1 scaffold) — skipping."
+          fi
