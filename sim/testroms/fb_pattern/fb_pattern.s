@@ -23,6 +23,9 @@ reset:
 
         lda #$20        ; CPU_TO_VRAM=1, COPY_ENABLE=0, page flags 0
         sta DMACTL
+        lda #$00        ; banking: RAM bank 0, VRAM page 0 — the register
+        sta BANKING     ; powers up undefined on real hardware (and the
+                        ; emulator randomizes it); lockstep caught this
 
         ; fill loop: $00/$01 = row pointer into the window, $02 = row
         lda #$00

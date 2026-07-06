@@ -13,7 +13,7 @@ OUT     := out
 
 CPU_SRCS := $(RTL_DIR)/cpu/cpu_65c02.v $(RTL_DIR)/cpu/ALU.v
 RTL_SRCS := $(abspath waivers.vlt) $(RTL_DIR)/gametank.sv $(RTL_DIR)/gtvideo.sv \
-            $(RTL_DIR)/mainbus.sv $(RTL_DIR)/vram.sv $(RTL_DIR)/gram.sv $(RTL_DIR)/blitter.sv $(RTL_DIR)/palette.sv $(CPU_SRCS)
+            $(RTL_DIR)/mainbus.sv $(RTL_DIR)/vram.sv $(RTL_DIR)/gram_ddr.sv $(RTL_DIR)/blitter.sv $(RTL_DIR)/palette.sv $(CPU_SRCS)
 
 # Our own RTL must stay -Wall clean; the vendored CPU is exempt (policy:
 # vendored cores are not linted/fixed), so its builds are -Wno-fatal.
@@ -26,8 +26,8 @@ CFLAGS     := -std=c++17 -O2 -I$(COMMON)
 # <tier>/test_<name>.cpp against RTL_SRCS. Klaus import-gate tests have
 # explicit rules below (extra fetch/build inputs and arguments).
 # ---------------------------------------------------------------------------
-UNIT_TESTS        := video_timing blitter mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp
-INTEGRATION_TESTS := cart_ram_pattern cart_fb_pattern
+UNIT_TESTS        := video_timing blitter gram_ddr mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp
+INTEGRATION_TESTS := cart_ram_pattern cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene
 
 # gametank-test --test NAME passes TEST=NAME
 TEST ?=
@@ -149,3 +149,52 @@ $(OUT)/unit_blitter: unit/test_blitter.cpp $(RTL_DIR)/blitter.sv | $(OUT)
 	$(VERILATOR) --cc --exe --build -j 0 -Wall --assert -O2 --top-module blitter \
 		--Mdir obj_dir/unit_blitter -CFLAGS "$(CFLAGS)" \
 		-o $(abspath $@) $(RTL_DIR)/blitter.sv $(abspath $<)
+
+# ---------------------------------------------------------------------------
+# Emulator-lockstep harness. GameTankEmulator is cloned on demand at a pinned
+# commit, patched for headless per-frame framebuffer dumps (see
+# emulator-patches/lockstep-headless.patch and docs/TESTING.md), and run with
+# SDL dummy drivers — same .gtr as the Verilator side, dumps compared.
+# ---------------------------------------------------------------------------
+EMU_URL    := https://github.com/clydeshaffer/GameTankEmulator
+EMU_COMMIT := e7e25e2daf5da5d041ae8dc48f740a362c1e66ff
+
+GameTankEmulator/.stamp:
+	rm -rf GameTankEmulator
+	git clone -q $(EMU_URL) GameTankEmulator
+	cd GameTankEmulator && git checkout -q $(EMU_COMMIT) && \
+	  git submodule update --init --depth 1 src/mos6502 src/imgui/ext/implot && \
+	  git apply $(abspath emulator-patches/lockstep-headless.patch)
+	touch $@
+
+GameTankEmulator/build/GameTankEmulator: GameTankEmulator/.stamp
+	+$(MAKE) -C GameTankEmulator build/GameTankEmulator
+
+LOCKSTEP_FRAMES ?= 12
+
+$(OUT)/%.emu_frames.bin: testroms/%.gtr GameTankEmulator/build/GameTankEmulator | $(OUT)
+	SDL_VIDEODRIVER=dummy SDL_AUDIODRIVER=dummy \
+	GTE_LOCKSTEP_OUT=$(abspath $@) GTE_LOCKSTEP_FRAMES=$(LOCKSTEP_FRAMES) \
+	  ./GameTankEmulator/build/GameTankEmulator --softrender --nosound --nojoystick \
+	  $(abspath $<) >/dev/null 2>&1
+
+run-integration-lockstep_fb_pattern: $(OUT)/integration_lockstep_fb_pattern \
+                                     $(OUT)/fb_pattern.emu_frames.bin testroms/fb_pattern.gtr
+	@echo ">>> integration/lockstep_fb_pattern"
+	@cd $(OUT) && ./integration_lockstep_fb_pattern fb_pattern.emu_frames.bin
+
+testroms/blit_scene.gtr: testroms/blit_scene/blit_scene.s testroms/blit_scene/gametank.cfg
+	cd testroms/blit_scene && \
+	  ca65 blit_scene.s -o blit_scene.o && \
+	  ld65 blit_scene.o -C gametank.cfg -o ../blit_scene.gtr
+
+run-integration-lockstep_blit_scene: $(OUT)/integration_lockstep_blit_scene \
+                                     $(OUT)/blit_scene.emu_frames.bin testroms/blit_scene.gtr
+	@echo ">>> integration/lockstep_blit_scene"
+	@cd $(OUT) && ./integration_lockstep_blit_scene blit_scene.emu_frames.bin
+
+$(OUT)/unit_gram_ddr: unit/test_gram_ddr.cpp $(RTL_DIR)/gram_ddr.sv | $(OUT)
+	@mkdir -p obj_dir/unit_gram_ddr
+	$(VERILATOR) --cc --exe --build -j 0 -Wall --assert -O2 --top-module gram_ddr \
+		--Mdir obj_dir/unit_gram_ddr -CFLAGS "$(CFLAGS)" \
+		-o $(abspath $@) $(RTL_DIR)/gram_ddr.sv $(abspath $<)

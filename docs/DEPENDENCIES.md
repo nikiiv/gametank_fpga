@@ -68,8 +68,15 @@ demand, never vendored. Audited 2026-07-06.
 
 ### GameTankEmulator (reference model)
 - **Upstream:** https://github.com/clydeshaffer/GameTankEmulator — C++/SDL2, GNU make.
-- Cloned by `tools/gametank-test` into `sim/GameTankEmulator/` (gitignored), pinned to a commit recorded in `sim/Makefile`.
-- **Caveat:** no headless mode upstream — the lockstep harness carries a small headless/trace patch (kept in `sim/emulator-patches/`), or CI falls back to xvfb.
+- Cloned on demand by `sim/Makefile` into `sim/GameTankEmulator/` (gitignored),
+  pinned to `e7e25e2daf5da5d041ae8dc48f740a362c1e66ff` (2026-06-03); submodules
+  `src/mos6502` + `src/imgui/ext/implot` at the recorded gitlinks.
+- **Headless (M4):** `sim/emulator-patches/lockstep-headless.patch` adds
+  env-driven per-frame framebuffer dumps (`GTE_LOCKSTEP_OUT`,
+  `GTE_LOCKSTEP_FRAMES`) at the vsync boundary in `mainloop`; runs under
+  `SDL_VIDEODRIVER=dummy` with `--softrender --nosound --nojoystick` (no xvfb
+  needed). Dumps are 16 KB of palette indices per frame (the displayed page),
+  avoiding the palette-RGB quirk entirely.
 
 ### Klaus Dormann 65C02 functional tests
 - **Upstream:** https://github.com/Klaus2m5/6502_65C02_functional_tests @ `7954e2dbb49c469ea286070bf46cdd71aeb29e4b` — **GPLv3**.

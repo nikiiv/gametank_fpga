@@ -35,7 +35,15 @@ module blitter
     input  logic [7:0]  dma_ctl,     // $2007 (COPY_ENABLE/COLORFILL/GCARRY/IRQ/TRANSP)
     input  logic [7:0]  banking,     // $2005 (GRAM bank, VRAM page, WRAPX/WRAPY)
 
-    // GRAM source port
+    // GRAM source port. gram_paddr/gram_want are combinational (the byte the
+    // *next* engine step would consume); gram_ready gates the step — with a
+    // BRAM GRAM tie gram_ready high, with the DDR3 backend it stalls the
+    // engine on row-buffer misses (pixel-write slip; IRQ timing unaffected —
+    // see gram_ddr.sv). gram_addr registers at the step; data on gram_q one
+    // clock later, as before.
+    output logic [18:0] gram_paddr,
+    output logic        gram_want,
+    input  logic        gram_ready,
     output logic [18:0] gram_addr,
     input  logic [7:0]  gram_q,
 
@@ -112,6 +120,13 @@ end
 wire [7:0] gx_eff = pW[7] ? ~gx1 : gx1;
 wire [7:0] gy_eff = pH[7] ? ~gy1 : gy1;
 
+// Candidate source byte for the step this cpu_ce would perform
+assign gram_paddr = {banking[2:0], gy_eff[7], gx_eff[7],
+                     gy_eff[6:0], gx_eff[6:0]};
+assign gram_want  = running2 && !dma_ctl[3];   // colorfill reads nothing
+
+wire engine_step = cpu_ce && (!gram_want || gram_ready);
+
 // ---- registers ------------------------------------------------------------
 // Pixel-op pipeline: values captured at the strobe, used over the window
 logic       px_valid;    // a pixel op happens this CPU cycle
@@ -155,7 +170,7 @@ always_ff @(posedge clk_sys) begin
         end
 
         if (cpu_ce) begin
-            // exact-duration IRQ
+            // exact-duration IRQ: counts real CPU cycles, never stalls
             if (dur_v) begin
                 if (dur <= 14'd1) begin
                     pending <= 1'b1;
@@ -163,7 +178,9 @@ always_ff @(posedge clk_sys) begin
                 end
                 else dur <= dur - 14'd1;
             end
+        end
 
+        if (engine_step) begin
             // engine step
             cW  <= w2;
             cVX <= vx1;
@@ -178,14 +195,15 @@ always_ff @(posedge clk_sys) begin
             // pixel op launch
             px_valid <= running2;
             if (running2) begin
-                gram_addr <= {banking[2:0], gy_eff[7], gx_eff[7],
-                              gy_eff[6:0], gx_eff[6:0]};
+                gram_addr <= gram_paddr;
                 gram_mid  <= {gy_eff[7], gx_eff[7]};
                 px_vx     <= vx1;
                 px_vy     <= vy1;
             end
-            win_ph <= '0;
         end
+
+        if (cpu_ce)
+            win_ph <= '0;
         else
             win_ph <= win_ph + 3'd1;
 

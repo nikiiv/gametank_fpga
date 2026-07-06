@@ -33,7 +33,9 @@ assign USER_OUT = '1;
 assign {UART_RTS, UART_TXD, UART_DTR} = 0;
 assign {SD_SCK, SD_MOSI, SD_CS} = 'Z;
 assign {SDRAM_DQ, SDRAM_A, SDRAM_BA, SDRAM_CLK, SDRAM_CKE, SDRAM_DQML, SDRAM_DQMH, SDRAM_nWE, SDRAM_nCAS, SDRAM_nRAS, SDRAM_nCS} = 'Z;
-assign {DDRAM_CLK, DDRAM_BURSTCNT, DDRAM_ADDR, DDRAM_DIN, DDRAM_BE, DDRAM_RD, DDRAM_WE} = '0;
+
+// DDR3: GRAM lives in HPS DDR3 (rtl/gram_ddr.sv; the cart joins in M7)
+assign DDRAM_CLK = clk_sys;
 
 assign VGA_SL = 0;
 assign VGA_F1 = 0;
@@ -110,9 +112,9 @@ wire VSync;
 wire ce_pix;
 wire [7:0] video_r, video_g, video_b;
 
-// Built-in boot cart: sim/testroms/fb_pattern.gtr baked into BRAM so the
+// Built-in boot cart: sim/testroms/blit_scene.gtr baked into BRAM so the
 // video chain is demonstrable on hardware before OSD .gtr loading (M7).
-// Regenerate with: hexdump -v -e '1/1 "%02X\n"' sim/testroms/fb_pattern.gtr > rtl/bootcart.mem
+// Regenerate with: hexdump -v -e '1/1 "%02X\n"' sim/testroms/blit_scene.gtr > rtl/bootcart.mem
 logic [7:0] bootcart [0:32767];
 initial $readmemh("rtl/bootcart.mem", bootcart);
 
@@ -127,6 +129,16 @@ gametank gametank
 
 	.cart_addr (cart_addr),
 	.cart_data (cart_data),
+
+	.ddr_rd         (DDRAM_RD),
+	.ddr_we         (DDRAM_WE),
+	.ddr_addr       (DDRAM_ADDR),
+	.ddr_din        (DDRAM_DIN),
+	.ddr_be         (DDRAM_BE),
+	.ddr_burstcnt   (DDRAM_BURSTCNT),
+	.ddr_dout       (DDRAM_DOUT),
+	.ddr_dout_ready (DDRAM_DOUT_READY),
+	.ddr_busy       (DDRAM_BUSY),
 
 	.ce_pix  (ce_pix),
 	.hblank  (HBlank),

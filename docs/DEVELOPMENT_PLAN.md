@@ -69,7 +69,7 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
   pixel-exactly in CI (`cart_fb_pattern`), incl. vsync-NMI via a WAI loop.
   The cart is also baked into the `.rbf` as a boot ROM until OSD loading (M7).
 
-## M4 — Blitter & interrupts
+## M4 — Blitter & interrupts ✅ (completed 2026-07-06)
 
 - Blitter per HARDWARE.md register spec; cycle-honest duration & completion IRQ
 - Vblank IRQ from raster position
@@ -78,6 +78,14 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
   dumped on divergence
 - Directed + randomized blitter tests vs a small C++ golden model
 - **Done when:** blitter test carts and lockstep runs pass in CI.
+- **Done:** `rtl/blitter.sv` transcribes the emulator's cycle-exact engine
+  (IRQ at exactly W×H cycles, level `pending && COPY_IRQ`, TRIGGER clears);
+  512 KB GRAM in BRAM with the gram_mid_bits CPU-quadrant behavior; 12
+  directed + 150 randomized golden-model sweeps. Lockstep harness: pinned
+  emulator + headless patch, frames aligned by cart tag signatures, dumps
+  compared as palette indices. It caught two real cart bugs on day one
+  (uninitialized $2005; mirrored-blit GX complement) — determinism rules
+  now in TESTING.md. Boot cart is now blit_scene (animated blitter demo).
 
 ## M5 — Input & VIA
 

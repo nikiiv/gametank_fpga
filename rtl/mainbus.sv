@@ -39,6 +39,7 @@ module mainbus
     output logic [7:0]  win_din,
     output logic        vram_we,
     output logic        gram_we,
+    output logic        gram_rd,     // pulses when a GRAM window read latches
     output logic        blit_param_we,
     input  logic [7:0]  vram_dout,
     input  logic [7:0]  gram_dout,
@@ -123,6 +124,7 @@ always_ff @(posedge clk_sys) begin
     end
     vram_we       <= cpu_ce && vram_sel  && cpu_we;
     gram_we       <= cpu_ce && gram_sel  && cpu_we;
+    gram_rd       <= cpu_ce && gram_sel  && !cpu_we;
     blit_param_we <= cpu_ce && param_sel && cpu_we;
 end
 

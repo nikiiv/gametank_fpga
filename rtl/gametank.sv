@@ -21,6 +21,17 @@ module gametank
     output logic [14:0] cart_addr,
     input  logic [7:0]  cart_data,
 
+    // DDRAM client (GRAM lives in HPS DDR3 — see rtl/gram_ddr.sv)
+    output logic        ddr_rd,
+    output logic        ddr_we,
+    output logic [28:0] ddr_addr,
+    output logic [63:0] ddr_din,
+    output logic [7:0]  ddr_be,
+    output logic [7:0]  ddr_burstcnt,
+    input  logic [63:0] ddr_dout,
+    input  logic        ddr_dout_ready,
+    input  logic        ddr_busy,
+
     output logic        ce_pix,
     output logic        hblank,
     output logic        hsync,
@@ -39,14 +50,20 @@ assign audio_r = '0;
 
 // 3.579545 MHz clock-enable for the console (clk_sys / 8): the CPU's RDY
 // strobe. All bus transactions latch at this strobe (see mainbus.sv).
+// gram_stall freezes the cadence while a CPU GRAM-window read waits on
+// DDR3 (documented deviation — real hardware never stalls; GRAM reads
+// from the CPU are rare and content-correct).
 logic [2:0] ce_div;
 logic       cpu_ce;
+logic       gram_stall;
 
 always_ff @(posedge clk_sys) begin
     if (reset) begin
         ce_div <= '0;
         cpu_ce <= 1'b0;
     end
+    else if (gram_stall)
+        cpu_ce <= 1'b0;
     else begin
         ce_div <= ce_div + 3'd1;
         cpu_ce <= (ce_div == 3'd7);
@@ -55,11 +72,12 @@ end
 
 logic [13:0] win_addr;
 logic [7:0]  win_din;
-logic        cpu_vram_we, cpu_gram_we, blit_param_we;
+logic        cpu_vram_we, cpu_gram_we, cpu_gram_rd, blit_param_we;
 logic [7:0]  vram_a_dout, gram_b_dout;
 logic [13:0] vram_b_addr;
 logic [7:0]  vram_b_dout;
-logic [7:0]  dma_ctl, bank_reg;
+logic [7:0]  dma_ctl  /*verilator public_flat_rd*/;
+logic [7:0]  bank_reg /*verilator public_flat_rd*/;
 logic        blit_irq;
 logic [1:0]  gram_mid;
 
@@ -76,6 +94,7 @@ mainbus mainbus
     .win_din       (win_din),
     .vram_we       (cpu_vram_we),
     .gram_we       (cpu_gram_we),
+    .gram_rd       (cpu_gram_rd),
     .blit_param_we (blit_param_we),
     .vram_dout     (vram_a_dout),
     .gram_dout     (gram_b_dout),
@@ -94,6 +113,9 @@ logic        blit_vram_we;
 logic [13:0] blit_vram_addr;
 logic [7:0]  blit_vram_din;
 
+logic [18:0] blit_gram_paddr;
+logic        blit_gram_want, blit_gram_ready;
+
 blitter blitter
 (
     .clk_sys    (clk_sys),
@@ -107,6 +129,9 @@ blitter blitter
     .dma_ctl    (dma_ctl),
     .banking    (bank_reg),
 
+    .gram_paddr (blit_gram_paddr),
+    .gram_want  (blit_gram_want),
+    .gram_ready (blit_gram_ready),
     .gram_addr  (blit_gram_addr),
     .gram_q     (blit_gram_q),
 
@@ -118,19 +143,42 @@ blitter blitter
     .gram_mid   (gram_mid)
 );
 
-gram gram
+gram_ddr gram_ddr
 (
-    .clk    (clk_sys),
+    .clk_sys        (clk_sys),
+    .reset          (reset),
+    .cpu_ce         (cpu_ce),
 
-    .a_addr (blit_gram_addr),
-    .a_dout (blit_gram_q),
+    .param_we       (blit_param_we),
+    .param_addr     (win_addr[2:0]),
+    .param_data     (win_din),
+    .dma_ctl        (dma_ctl),
+    .banking        (bank_reg),
+
+    .blit_paddr     (blit_gram_paddr),
+    .blit_want      (blit_gram_want),
+    .blit_ready     (blit_gram_ready),
+    .blit_addr      (blit_gram_addr),
+    .blit_q         (blit_gram_q),
 
     // CPU window: quadrant within the 64 KB bank comes from the blitter's
     // latched counter high bits (HARDWARE.md §Blitter, gram_mid_bits)
-    .b_addr ({bank_reg[2:0], gram_mid, win_addr}),
-    .b_we   (cpu_gram_we),
-    .b_din  (win_din),
-    .b_dout (gram_b_dout)
+    .cpu_addr       ({bank_reg[2:0], gram_mid, win_addr}),
+    .cpu_we         (cpu_gram_we),
+    .cpu_wdata      (win_din),
+    .cpu_rd         (cpu_gram_rd),
+    .cpu_q          (gram_b_dout),
+    .cpu_stall      (gram_stall),
+
+    .ddr_rd         (ddr_rd),
+    .ddr_we         (ddr_we),
+    .ddr_addr       (ddr_addr),
+    .ddr_din        (ddr_din),
+    .ddr_be         (ddr_be),
+    .ddr_burstcnt   (ddr_burstcnt),
+    .ddr_dout       (ddr_dout),
+    .ddr_dout_ready (ddr_dout_ready),
+    .ddr_busy       (ddr_busy)
 );
 
 // VRAM port A: blitter writes win over the CPU window — they are never
@@ -152,7 +200,7 @@ vram vram
     .b_dout (vram_b_dout)
 );
 
-logic vsync_nmi;
+logic vsync_nmi /*verilator public_flat_rd*/;
 
 gtvideo gtvideo
 (

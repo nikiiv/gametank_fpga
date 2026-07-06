@@ -71,6 +71,20 @@ which clocks the core and samples video exactly as the framework does
 Register new tests by adding the name to `UNIT_TESTS` / `INTEGRATION_TESTS`
 in `sim/Makefile`; `--test NAME` filtering maps to `make TEST=NAME`.
 
+## Lockstep determinism rules (learned the hard way in M4)
+
+The emulator faithfully randomizes power-on state (`randomize_memory`,
+`randomize_vram`, `srand(time)`), while our RTL resets registers to zero —
+so a lockstep cart is only deterministic if it **initializes every register
+and memory cell it depends on** ($2005 banking included; its power-on state
+is undefined on real hardware) and never reads open bus. Violations show up
+as ~50% flaky lockstep runs (the first fb_pattern cart forgot $2005 and
+filled the wrong VRAM page whenever the emulator's random banking[3] was 1).
+Dynamic carts must also draw every pixel of a frame (clear first) and tag
+frames with a multi-byte signature so the comparator can align frame streams
+without relying on absolute frame indices (the emulator's 59,659-cycle frame
+vs. our 59,474 makes absolute alignment meaningless).
+
 ## Adding a test
 
 1. Write a minimal test cart in `sim/testroms/<name>/` (cc65 project, makefile

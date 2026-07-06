@@ -7,6 +7,7 @@
 
 #pragma once
 
+#include <array>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
@@ -23,6 +24,18 @@ struct Pixel {
     bool    de, hs, vs;
 };
 
+// Minimal test reporting: CHECK aborts with context on failure.
+#define CHECK(cond, ...)                                                  \
+    do {                                                                  \
+        if (!(cond)) {                                                    \
+            std::fprintf(stderr, "FAIL %s:%d: %s\n     ", __FILE__,       \
+                         __LINE__, #cond);                                \
+            std::fprintf(stderr, __VA_ARGS__);                            \
+            std::fprintf(stderr, "\n");                                   \
+            std::exit(1);                                                 \
+        }                                                                 \
+    } while (0)
+
 class Sim {
 public:
     Vgametank top;
@@ -31,6 +44,42 @@ public:
     // Cartridge backing for the abstract cart bus ($8000-$FFFF window).
     // Defaults to 0xFF (floating bus, matching the emu wrapper's tie-off).
     std::vector<uint8_t> cart = std::vector<uint8_t>(32768, 0xFF);
+
+    // DDR3 model backing the GRAM region (0x3000_0000, rtl/gram_ddr.sv).
+    // Fixed latency for determinism: a command is accepted when presented,
+    // read data starts DDR_LAT ticks later, one 64-bit beat per tick.
+    static constexpr int DDR_LAT = 12;
+    std::vector<uint8_t> ddr = std::vector<uint8_t>(512 * 1024, 0);
+    struct DdrJob { uint64_t due; uint32_t byteAddr; int beats; int beat; };
+    std::vector<DdrJob> ddrJobs;
+
+    void ddrStep() {
+        top.ddr_dout_ready = 0;
+        top.ddr_busy = 0;
+
+        if (!ddrJobs.empty()) {
+            auto& j = ddrJobs.front();
+            if (cycles >= j.due) {
+                uint64_t v = 0;
+                uint32_t a = (j.byteAddr + (uint32_t)j.beat * 8) & 0x7FFFF;
+                for (int b = 7; b >= 0; b--) v = (v << 8) | ddr[(a + b) & 0x7FFFF];
+                top.ddr_dout = v;
+                top.ddr_dout_ready = 1;
+                if (++j.beat == j.beats) ddrJobs.erase(ddrJobs.begin());
+            }
+        }
+
+        if (top.ddr_rd && ddrJobs.size() < 4) {
+            uint32_t byteAddr = (uint32_t)(top.ddr_addr & 0xFFFF) << 3;
+            ddrJobs.push_back({cycles + DDR_LAT, byteAddr, top.ddr_burstcnt, 0});
+        }
+        if (top.ddr_we) {
+            uint32_t byteAddr = (uint32_t)(top.ddr_addr & 0xFFFF) << 3;
+            for (int b = 0; b < 8; b++)
+                if (top.ddr_be & (1 << b))
+                    ddr[(byteAddr + b) & 0x7FFFF] = (uint8_t)(top.ddr_din >> (8 * b));
+        }
+    }
 
     void loadCart(const std::string& path) {
         FILE* f = std::fopen(path.c_str(), "rb");
@@ -44,6 +93,7 @@ public:
     // with output values as they are latched by the framework.
     void tick(const std::function<void(const Pixel&)>& onPixel = nullptr) {
         top.cart_data = cart[top.cart_addr & 0x7FFF];
+        ddrStep();
 
         top.clk_sys = 0;
         top.eval();
@@ -74,19 +124,32 @@ public:
         return top.rootp->gametank__DOT__vram__DOT__mem[((page & 1) << 14) |
                                                         (addr & 0x3FFF)];
     }
-};
+    uint8_t dmaCtl() const { return top.rootp->gametank__DOT__dma_ctl; }
 
-// Minimal test reporting: CHECK aborts with context on failure.
-#define CHECK(cond, ...)                                                  \
-    do {                                                                  \
-        if (!(cond)) {                                                    \
-            std::fprintf(stderr, "FAIL %s:%d: %s\n     ", __FILE__,       \
-                         __LINE__, #cond);                                \
-            std::fprintf(stderr, __VA_ARGS__);                            \
-            std::fprintf(stderr, "\n");                                   \
-            std::exit(1);                                                 \
-        }                                                                 \
-    } while (0)
+    // Lockstep support: run until `frames` frame boundaries (the vsync-NMI
+    // instant at the start of line 0) have passed, snapshotting the
+    // *displayed* framebuffer page (16 KB of palette indices) at each one —
+    // the same instant and content the patched emulator dumps.
+    std::vector<std::array<uint8_t, 16384>> runFrames(int frames) {
+        std::vector<std::array<uint8_t, 16384>> out;
+        bool prev = true;  // the reset-time pulse doesn't count as a boundary
+        uint64_t guard = cycles + (uint64_t)(frames + 2) * 1816 * 262;
+        while ((int)out.size() < frames && cycles < guard) {
+            tick();
+            bool nmi = top.rootp->gametank__DOT__vsync_nmi;
+            if (nmi && !prev && cycles > 100) {
+                out.emplace_back();
+                int page = (dmaCtl() >> 1) & 1;
+                for (int i = 0; i < 16384; i++)
+                    out.back()[i] = vramRead(page, (uint16_t)i);
+            }
+            prev = nmi;
+        }
+        CHECK((int)out.size() == frames, "only %zu/%d frames captured",
+              out.size(), frames);
+        return out;
+    }
+};
 
 struct Frame {
     int width  = 0;

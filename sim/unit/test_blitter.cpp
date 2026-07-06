@@ -120,6 +120,7 @@ struct Rtl {
         top.reset = 1;
         top.cpu_ce = 0;
         top.param_we = 0;
+        top.gram_ready = 1;   // BRAM-style always-ready (no DDR3 model here)
         for (int i = 0; i < 8; i++) clk1();
         top.reset = 0;
         std::memset(vram, 0, sizeof vram);

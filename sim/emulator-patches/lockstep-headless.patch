@@ -1,0 +1,52 @@
+diff --git a/src/gte.cpp b/src/gte.cpp
+index 1061b46..c6719bb 100644
+--- a/src/gte.cpp
++++ b/src/gte.cpp
+@@ -517,6 +517,20 @@ void MemoryWrite(uint16_t address, uint8_t value) {
+ 
+ SDL_Event e;
+ bool running = true;
++
++//--- gametank_fpga lockstep patch: headless per-frame framebuffer dumps ---
++static FILE* lockstep_file = NULL;
++static long  lockstep_frames = 0;
++static long  lockstep_count = 0;
++static void lockstep_init() {
++	const char* out = getenv("GTE_LOCKSTEP_OUT");
++	if(!out) return;
++	lockstep_file = fopen(out, "wb");
++	const char* n = getenv("GTE_LOCKSTEP_FRAMES");
++	lockstep_frames = n ? atol(n) : 60;
++}
++//--------------------------------------------------------------------------
++
+ bool gofast = false;
+ bool paused = true;
+ bool lshift = false;
+@@ -1148,6 +1162,18 @@ EM_BOOL mainloop(double time, void* userdata) {
+ 					profiler.last_blitter_activity = blitter->pixels_this_frame;
+ 					blitter->pixels_this_frame = 0;
+ 				}
++				//--- gametank_fpga lockstep patch: dump displayed page ---
++				if(lockstep_file) {
++					fwrite(system_state.vram +
++						((system_state.dma_control & DMA_VID_OUT_PAGE_BIT) ? 0x4000 : 0),
++						1, 0x4000, lockstep_file);
++					if(++lockstep_count >= lockstep_frames) {
++						fclose(lockstep_file);
++						lockstep_file = NULL;
++						running = false;
++					}
++				}
++				//----------------------------------------------------------
+ 			}
+ 		} else {
+ 				SDL_Delay(16);
+@@ -1320,6 +1346,7 @@ EM_BOOL mainloop(double time, void* userdata) {
+ }
+ 
+ int main(int argC, char* argV[]) {
++	lockstep_init();
+ 	srand(time(NULL));
+ 	cartridge_state.rom = new uint8_t[1 << 21];
+ 
