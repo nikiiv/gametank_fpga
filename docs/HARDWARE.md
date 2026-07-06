@@ -158,6 +158,32 @@ Behavior (`Blitter::CatchUp`, cycle-accurate model in the emulator):
 - COLORFILL substitutes `~COLOR` for GRAM data (solid fill).
 - Writing TRIGGER with 0 cancels/clears the IRQ state.
 
+Additional findings (M4, 2026-07-06, from `blitter.cpp`/`gte.cpp` re-read):
+
+- **IRQ is level-shaped:** line = `pending && COPY_IRQ(dma[6])`, with the
+  gate evaluated live ($2007 writes can mask/unmask a pending IRQ,
+  `gte.cpp:494`); pending sets at copy completion and clears on **any**
+  TRIGGER write (`blitter.cpp:22–25`).
+- **Mirroring is the full 8-bit complement** of GX/GY applied before the
+  GRAM address is formed — the inverted bit 7s participate in quadrant
+  selection (`blitter.cpp:107–119`).
+- **`gram_mid_bits`** (`{GY'[7], GX'[7]}` of the *mirrored* counters, latched
+  at every blitter pixel op): these same lines select which 16 KB quadrant of
+  the 64 KB GRAM bank the **CPU's $4000 window** sees when CPU_TO_VRAM=0
+  (`gte.cpp:238,263–264`). Software must run a (dummy) blit whose GX/GY high
+  bits point at a quadrant before poking it through the window.
+- **Window reads while COPY_ENABLE=1 return open bus** (`gte.cpp:225–227`;
+  the emulator returns random — real hardware floats the bus).
+- Engine pipeline per CPU cycle (`CatchUp` phases): W decrements, then
+  V/G counters increment (GX per pixel, GY per row, both through the GCARRY
+  rule), row/copy completion evaluates, then the pixel write strobes. INIT
+  (the cycle after TRIGGER) loads all counters and writes the first pixel at
+  (VX,VY) in that same cycle, so pixels land on cycles 1..W×H after trigger
+  and the IRQ arrives at exactly W×H. Degenerate loads: H=0 completes
+  immediately (no writes); W=0 behaves as a column writer in the emulator's
+  engine while the scheduled IRQ still fires at 0 — software never uses
+  either; RTL follows the engine.
+
 ## Audio coprocessor — `audio_coprocessor.cpp/h`
 
 - Second 65C02 executing from the shared 4 KB audio RAM (`$3000–$3FFF` on the

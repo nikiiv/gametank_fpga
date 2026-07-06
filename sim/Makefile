@@ -13,7 +13,7 @@ OUT     := out
 
 CPU_SRCS := $(RTL_DIR)/cpu/cpu_65c02.v $(RTL_DIR)/cpu/ALU.v
 RTL_SRCS := $(abspath waivers.vlt) $(RTL_DIR)/gametank.sv $(RTL_DIR)/gtvideo.sv \
-            $(RTL_DIR)/mainbus.sv $(RTL_DIR)/vram.sv $(RTL_DIR)/palette.sv $(CPU_SRCS)
+            $(RTL_DIR)/mainbus.sv $(RTL_DIR)/vram.sv $(RTL_DIR)/gram.sv $(RTL_DIR)/blitter.sv $(RTL_DIR)/palette.sv $(CPU_SRCS)
 
 # Our own RTL must stay -Wall clean; the vendored CPU is exempt (policy:
 # vendored cores are not linted/fixed), so its builds are -Wno-fatal.
@@ -26,7 +26,7 @@ CFLAGS     := -std=c++17 -O2 -I$(COMMON)
 # <tier>/test_<name>.cpp against RTL_SRCS. Klaus import-gate tests have
 # explicit rules below (extra fetch/build inputs and arguments).
 # ---------------------------------------------------------------------------
-UNIT_TESTS        := video_timing mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp
+UNIT_TESTS        := video_timing blitter mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp
 INTEGRATION_TESTS := cart_ram_pattern cart_fb_pattern
 
 # gametank-test --test NAME passes TEST=NAME
@@ -142,3 +142,10 @@ testroms/fb_pattern.gtr: testroms/fb_pattern/fb_pattern.s testroms/fb_pattern/ga
 	cd testroms/fb_pattern && \
 	  ca65 fb_pattern.s -o fb_pattern.o && \
 	  ld65 fb_pattern.o -C gametank.cfg -o ../fb_pattern.gtr
+
+# Blitter unit tests verilate rtl/blitter.sv alone (our RTL, -Wall applies)
+$(OUT)/unit_blitter: unit/test_blitter.cpp $(RTL_DIR)/blitter.sv | $(OUT)
+	@mkdir -p obj_dir/unit_blitter
+	$(VERILATOR) --cc --exe --build -j 0 -Wall --assert -O2 --top-module blitter \
+		--Mdir obj_dir/unit_blitter -CFLAGS "$(CFLAGS)" \
+		-o $(abspath $@) $(RTL_DIR)/blitter.sv $(abspath $<)

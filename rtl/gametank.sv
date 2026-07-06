@@ -53,52 +53,104 @@ always_ff @(posedge clk_sys) begin
     end
 end
 
-logic        vram_a_page;
-logic [13:0] vram_a_addr;
-logic        vram_a_we;
-logic [7:0]  vram_a_din, vram_a_dout;
+logic [13:0] win_addr;
+logic [7:0]  win_din;
+logic        cpu_vram_we, cpu_gram_we, blit_param_we;
+logic [7:0]  vram_a_dout, gram_b_dout;
 logic [13:0] vram_b_addr;
 logic [7:0]  vram_b_dout;
-logic [7:0]  dma_ctl;
+logic [7:0]  dma_ctl, bank_reg;
+logic        blit_irq;
+logic [1:0]  gram_mid;
 
 mainbus mainbus
 (
-    .clk_sys   (clk_sys),
-    .reset     (reset),
-    .cpu_ce    (cpu_ce),
+    .clk_sys       (clk_sys),
+    .reset         (reset),
+    .cpu_ce        (cpu_ce),
 
-    .cart_addr (cart_addr),
-    .cart_data (cart_data),
+    .cart_addr     (cart_addr),
+    .cart_data     (cart_data),
 
-    .vram_page (vram_a_page),
-    .vram_addr (vram_a_addr),
-    .vram_we   (vram_a_we),
-    .vram_din  (vram_a_din),
-    .vram_dout (vram_a_dout),
+    .win_addr      (win_addr),
+    .win_din       (win_din),
+    .vram_we       (cpu_vram_we),
+    .gram_we       (cpu_gram_we),
+    .blit_param_we (blit_param_we),
+    .vram_dout     (vram_a_dout),
+    .gram_dout     (gram_b_dout),
 
-    .dma_ctl   (dma_ctl),
+    .dma_ctl       (dma_ctl),
+    .bank_reg      (bank_reg),
 
-    .irq       (1'b0),   // blitter IRQ arrives in M4
-    .nmi       (vsync_nmi && dma_ctl[2])   // VSYNC_NMI enable
+    .irq           (blit_irq),
+    .nmi           (vsync_nmi && dma_ctl[2])   // VSYNC_NMI enable
 );
 
+// Blitter and GRAM
+logic [18:0] blit_gram_addr;
+logic [7:0]  blit_gram_q;
+logic        blit_vram_we;
+logic [13:0] blit_vram_addr;
+logic [7:0]  blit_vram_din;
+
+blitter blitter
+(
+    .clk_sys    (clk_sys),
+    .reset      (reset),
+    .cpu_ce     (cpu_ce),
+
+    .param_we   (blit_param_we),
+    .param_addr (win_addr[2:0]),
+    .param_data (win_din),
+
+    .dma_ctl    (dma_ctl),
+    .banking    (bank_reg),
+
+    .gram_addr  (blit_gram_addr),
+    .gram_q     (blit_gram_q),
+
+    .vram_we    (blit_vram_we),
+    .vram_addr  (blit_vram_addr),
+    .vram_din   (blit_vram_din),
+
+    .irq        (blit_irq),
+    .gram_mid   (gram_mid)
+);
+
+gram gram
+(
+    .clk    (clk_sys),
+
+    .a_addr (blit_gram_addr),
+    .a_dout (blit_gram_q),
+
+    // CPU window: quadrant within the 64 KB bank comes from the blitter's
+    // latched counter high bits (HARDWARE.md §Blitter, gram_mid_bits)
+    .b_addr ({bank_reg[2:0], gram_mid, win_addr}),
+    .b_we   (cpu_gram_we),
+    .b_din  (win_din),
+    .b_dout (gram_b_dout)
+);
+
+// VRAM port A: blitter writes win over the CPU window — they are never
+// simultaneously active (blitter writes require COPY_ENABLE=1, CPU window
+// access requires COPY_ENABLE=0), and the blitter's 1-clk pulse disturbs
+// CPU reads for one clock mid-window only.
 vram vram
 (
     .clk    (clk_sys),
 
-    .a_page (vram_a_page),
-    .a_addr (vram_a_addr),
-    .a_we   (vram_a_we),
-    .a_din  (vram_a_din),
+    .a_page (bank_reg[3]),
+    .a_addr (blit_vram_we ? blit_vram_addr : win_addr),
+    .a_we   (blit_vram_we | cpu_vram_we),
+    .a_din  (blit_vram_we ? blit_vram_din : win_din),
     .a_dout (vram_a_dout),
 
     .b_page (dma_ctl[1]),   // VID_OUT_PAGE
     .b_addr (vram_b_addr),
     .b_dout (vram_b_dout)
 );
-
-// dma_ctl[5] (CPU_TO_VRAM) is consumed inside mainbus; [1]/[2] here.
-wire _unused_dma = &{1'b0, dma_ctl[7:3], dma_ctl[0]};
 
 logic vsync_nmi;
 
