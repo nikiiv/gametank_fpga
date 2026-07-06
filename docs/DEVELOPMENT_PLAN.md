@@ -109,20 +109,53 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
   (pads_demo indicators track injected input through the full video path).
   pads_demo is the boot cart for the manual hardware check.
 
-## M6 — Audio
+## M6 — Audio ✅ (completed 2026-07-06)
 
 - Second 65C02 instance + audio RAM + 8-bit DAC register, per schematic
 - Main-CPU↔audio-CPU communication path (shared RAM window, reset control)
 - Output through MiSTer audio path (resample to 48 kHz, low-pass)
 - Lockstep audio-trace comparison against emulator for an audio test cart
 - **Done when:** audio test cart trace matches emulator within tolerance.
+- **Done:** `rtl/acp.sv` is schematic-true (HARDWARE.md §Audio, M6 open item
+  resolved): ACP at CLK14, CD40103 period = {rate[6:0],rate[0]}+1 at
+  3.58 MHz (emulator uses preset exactly — <1% pitch divergence, documented),
+  AUDIO_RDY as the run gate, DAC zero-order hold, reset released at the next
+  tick. The audio-trace lockstep was amended to schematic-exact sim
+  verification + a hardware audible check (rationale in TESTING.md — the
+  emulator's headless audio pacing runs ~4× real time). Along the way the
+  vendored CPU gained the NMI-vs-IRQ-coincidence fix (DEPENDENCIES.md §CPU
+  mod 5) — the ACP would otherwise lose main-CPU NMI commands. Boot cart:
+  pads_demo now beeps (~424 Hz saw) while any button is held.
 
-## M7 — Cartridge
+## M7 — Cartridge ✅ (completed 2026-07-06)
 
 - DDR3-backed cart controller behind the abstract cart-bus interface;
   prefetch to hide HPS latency (budget: 6502 bus cycle ≈ 280 ns)
 - `.gtr` loading via OSD (`ioctl` download path), banking per HARDWARE.md
 - **Done when:** first real games boot from OSD-loaded `.gtr` on hardware.
+- **Done:** `rtl/cart.sv` (image in HPS DDR3 at `0x3010_0000`, shared with
+  GRAM through the new `rtl/ddr_mux.sv` round-robin arbiter; type from
+  `.gtr` size; bit-true 74HC595 bank SPI on the VIA Port A pins). Latency
+  plan per HARDWARE.md §Cartridge: fixed bank in BRAM (filled once per
+  download), banked window from parity-mapped word buffers with a 2-beat
+  refill under CPU clock-enable stall — buffers only mutate while the CPU
+  is stalled, after an async-prefetch design lost a race between refills
+  and hit lookups (caught by `cart_download`; clock-level trace in the M7
+  log). Wrapper: OSD `Load Cartridge` (index 1) + `boot.rom` auto-load
+  (index 0), console held in reset through the transfer. Tests: `cart`
+  unit (Flash2M banking / SPI / fixed bank / sequential refill),
+  `cart_download` integration (32 KB EEPROM streamed byte-by-byte, boots
+  from DDR3), `game_smoke` system tier (real SDK 2 MB game, logo pixel
+  counts match the emulator exactly). Verified on the DE10: SDK game
+  auto-boots via `boot.rom` and animates; boot cart still runs when no
+  `.gtr` is loaded. **Field fix (same day):** OSD loads froze — the
+  wrapper released reset when `ioctl_download` dropped, but the fixed-bank
+  fill still had ~30 µs to run, so the console booted the old window and
+  had it swapped mid-execution (`boot.rom` loads never hit this: the
+  framework's init reset outlives the fill). `dl_wait` now holds reset
+  through the fill; repro locked in as `cart_osd_load`, and the pads_demo
+  test also asserts the M6 tone through the M7 core. Bad Apple verified
+  full-screen on the DE10 via a mid-run indexed load.
 
 ## M8 — Compatibility & release
 

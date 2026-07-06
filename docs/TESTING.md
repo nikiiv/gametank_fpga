@@ -47,6 +47,11 @@ Real homebrew games run for thousands of frames with scripted input and
 screenshot-hash checkpoints. Run before releases and when chasing
 compatibility bugs; not part of every CI run.
 
+First inhabitant (M7): `game_smoke` — a real `.gtr` (path via `GTR_GAME=`)
+is pushed through the cart download port and must boot from DDR3 and draw
+(`make -C sim system GTR_GAME=/abs/path/game.gtr`). The SDK default
+project's logo screen matches the emulator's pixel counts exactly.
+
 ### On-hardware (manual)
 
 Smoke checklist per release: boot, pad feel/latency, HDMI + analog video,
@@ -84,6 +89,20 @@ Dynamic carts must also draw every pixel of a frame (clear first) and tag
 frames with a multi-byte signature so the comparator can align frame streams
 without relying on absolute frame indices (the emulator's 59,659-cycle frame
 vs. our 59,474 makes absolute alignment meaningless).
+
+## Audio verification (M6 decision)
+
+The plan called for a lockstep audio-trace comparison "within tolerance",
+but the emulator is not a usable audio-timing reference headlessly: in
+`--nosound` mode its pacing constants disagree (`clksPerHostSample = 1024`
+against `samples_per_frame` calibrated for 256), running the ACP ~4× real
+time, and IRQs are quantized to host-sample chunks. The RTL is instead held
+to the *schematic*: `sim/unit/test_acp.cpp` asserts exact CD40103 timing
+(period = preset+1 at 3.579545 MHz), the DAC zero-order hold, saw
+generation via WAI+IRQ firmware, NMI command delivery, and the shared-RAM
+path (which is also what lockstep carts exercise functionally). The audible
+end-to-end check is the pads_demo boot cart's press-a-button tone on
+hardware.
 
 ## Adding a test
 

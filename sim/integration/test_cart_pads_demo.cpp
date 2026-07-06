@@ -50,6 +50,27 @@ int main() {
         checkBlock(g, i, 80, false, "pad2(2)");
     }
 
-    std::printf("PASS cart_pads_demo: indicators track scripted input\n");
+    // M6 tone through the M7 core: any held button must produce a moving
+    // DAC (the ~424 Hz saw); releasing must freeze it (rate run bit clear).
+    sim.top.joy1 = (1 << 4);              // A held
+    for (int i = 0; i < 2 * 1816 * 262; i++) sim.tick();  // settle
+    auto dacChanges = [&](int ticks) {
+        int changes = 0;
+        uint8_t last = (uint8_t)(sim.top.audio_l >> 8);
+        for (int i = 0; i < ticks; i++) {
+            sim.tick();
+            uint8_t v = (uint8_t)(sim.top.audio_l >> 8);
+            if (v != last) { changes++; last = v; }
+        }
+        return changes;
+    };
+    int held = dacChanges(200000);
+    CHECK(held > 100, "no tone while button held (%d DAC steps)", held);
+    sim.top.joy1 = 0;
+    for (int i = 0; i < 2 * 1816 * 262; i++) sim.tick();
+    int idle = dacChanges(200000);
+    CHECK(idle == 0, "tone did not stop on release (%d DAC steps)", idle);
+
+    std::printf("PASS cart_pads_demo: indicators track scripted input, tone on hold\n");
     return 0;
 }

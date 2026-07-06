@@ -1422,12 +1422,24 @@ always @*
 
 
 reg NMI_1 = 0;          // delayed NMI signal
+reg NMI_taking = 0;     // GameTank mod: this BRK sequence vectors to NMI
 
 always @(posedge clk)
     NMI_1 <= NMI;
 
+/*
+ * GameTank mod: only consume NMI_edge when the interrupt sequence actually
+ * took the NMI vector. Upstream cleared it at any BRK3 — an IRQ entry that
+ * coincided with an NMI edge would silently eat the NMI (the GameTank ACP
+ * hits this constantly: sample-rate IRQs run while the main CPU sends NMI
+ * commands). Real hardware latches the edge until serviced.
+ */
+always @(posedge clk)
+    if( RDY && state == BRK2 )
+        NMI_taking <= NMI_edge & ~res;
+
 always @(posedge clk )
-    if( NMI_edge && state == BRK3 )
+    if( NMI_edge && state == BRK3 && NMI_taking )
         NMI_edge <= 0;
     else if( NMI & ~NMI_1 )
         NMI_edge <= 1;

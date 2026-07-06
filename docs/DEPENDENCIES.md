@@ -37,7 +37,13 @@ demand, never vendored. Audited 2026-07-06.
   4. **D flag cleared at BRK3** — the 65C02 clears decimal mode when taking
      BRK/IRQ/NMI/reset; the vendored core didn't (NMOS behavior). Found by
      the Klaus 65C02 extended test (BRK pass 2, `$ff-decmode` flag check).
-  5. Rockwell `BBR/BBS/SMB/RMB`: **not implemented** (no GameTank software
+  5. **NMI edge preserved across coincident IRQ entry (M6):** upstream
+     cleared `NMI_edge` at any BRK3, so an NMI arriving during an IRQ's
+     interrupt sequence was silently lost — the GameTank ACP hits this
+     constantly (sample-rate IRQs + main-CPU NMI commands). The sequence now
+     records at BRK2 whether it took the NMI vector and only then consumes
+     the edge (`NMI_taking`, marked "GameTank mod").
+  6. Rockwell `BBR/BBS/SMB/RMB`: **not implemented** (no GameTank software
      uses them; they run as correct-length NOPs via `IMPLEMENT_NOPS`).
      Post-1.0 fidelity item.
 - **Import gate (sim/, runs in CI):** Klaus `6502_functional_test.bin` stock

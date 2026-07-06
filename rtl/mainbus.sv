@@ -28,6 +28,7 @@ module mainbus
     input  logic        cpu_ce,      // 3.579545 MHz strobe: CPU RDY
 
     output logic [14:0] cart_addr,   // $8000-$FFFF window (strobe-latched)
+    output logic        cart_rd,     // 1-clk pulse: read latched this strobe
     input  logic [7:0]  cart_data,   // must be valid within the 8-clk window
 
     // VDMA window ($4000-$7FFF): shared strobe-latched address/data with
@@ -56,6 +57,13 @@ module mainbus
     output logic        via_wen,
     output logic        via_ren,
     input  logic [7:0]  via_q,
+
+    // audio: registers in $2000-$2007 (slots 0/1/6) + $3000-$3FFF RAM window
+    output logic        acp_reset_we,
+    output logic        acp_nmi_we,
+    output logic        acp_rate_we,
+    output logic        aram_we,
+    input  logic [7:0]  aram_q,
 
     input  logic        irq,         // blitter IRQ (gated), VIA (M5)
     input  logic        nmi          // vsync NMI (from scanout, gated dma_ctl[2])
@@ -125,6 +133,7 @@ wire vram_sel  = vdma_sel && !dma_ctl[0] &&  dma_ctl[5];
 wire gram_sel  = vdma_sel && !dma_ctl[0] && !dma_ctl[5];
 wire param_sel = vdma_sel &&  dma_ctl[0];
 wire via_sel   = (cpu_ab[15:11] == 5'b00101);   // $2800-$2FFF
+wire aram_sel  = (cpu_ab[15:12] == 4'b0011);    // $3000-$3FFF
 
 assign bank_reg = banking;
 
@@ -147,13 +156,18 @@ always_ff @(posedge clk_sys) begin
         via_wen <= via_sel && cpu_we;
         via_ren <= via_sel && !cpu_we;
     end
+    acp_reset_we <= cpu_ce && reg_write && cpu_ab[2:0] == 3'd0;
+    acp_nmi_we   <= cpu_ce && reg_write && cpu_ab[2:0] == 3'd1;
+    acp_rate_we  <= cpu_ce && reg_write && cpu_ab[2:0] == 3'd6;
+    aram_we      <= cpu_ce && aram_sel && cpu_we;
+    cart_rd      <= cpu_ce && cpu_ab[15] && !cpu_we;
 end
 
 // Read-source select, latched at the strobe alongside the address so the
 // data mux below is loop-free (the core's AB is a function of DI on
 // vector/jump-target cycles).
-typedef enum logic [2:0] { SEL_RAM, SEL_CART, SEL_VRAM, SEL_GRAM,
-                           SEL_PAD, SEL_VIA, SEL_OPEN } rdsel_e;
+typedef enum logic [3:0] { SEL_RAM, SEL_CART, SEL_VRAM, SEL_GRAM,
+                           SEL_PAD, SEL_VIA, SEL_ARAM, SEL_OPEN } rdsel_e;
 rdsel_e     rd_sel;
 logic [7:0] open_bus;
 
@@ -163,6 +177,7 @@ always_ff @(posedge clk_sys) begin
             16'b000?_????_????_????: rd_sel <= SEL_RAM;   // $0000-$1FFF
             16'b0010_0000_0000_100?: rd_sel <= SEL_PAD;   // $2008/$2009
             16'b0010_1???_????_????: rd_sel <= SEL_VIA;   // $2800-$2FFF
+            16'b0011_????_????_????: rd_sel <= SEL_ARAM;  // $3000-$3FFF
             16'b01??_????_????_????: rd_sel <= vram_sel ? SEL_VRAM :
                                                gram_sel ? SEL_GRAM : SEL_OPEN;
             16'b1???_????_????_????: rd_sel <= SEL_CART;  // $8000-$FFFF
@@ -181,6 +196,7 @@ always_comb begin
         SEL_GRAM: cpu_di = gram_dout;
         SEL_PAD:  cpu_di = pad_q;
         SEL_VIA:  cpu_di = via_q;
+        SEL_ARAM: cpu_di = aram_q;
         default:  cpu_di = open_bus;
     endcase
 end

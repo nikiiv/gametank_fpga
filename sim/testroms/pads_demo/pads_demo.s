@@ -7,7 +7,9 @@
 ; when pressed. Drawing is direct CPU framebuffer writes on page 0.
 ;
 ; The sim integration test injects scripted input and checks block colors;
-; on hardware this is the manual pad check (bootcart).
+; on hardware this is the manual pad check (bootcart). M6 addition: a saw
+; tone (~424 Hz) plays from the audio coprocessor while any button is held —
+; the audible check for the ACP path.
 
 .setcpu "65C02"
 
@@ -42,6 +44,24 @@ reset:
         stz LASTNMI
         lda #$24        ; CPU_TO_VRAM | VSYNC_NMI, page 0 displayed
         sta DMACTL
+
+        ; ---- upload ACP saw firmware + vectors, hold it stopped ----------
+        ldx #$00
+fwcp:   lda acpfw,x
+        sta $3000,x
+        inx
+        cpx #$0D        ; firmware length (13 bytes)
+        bne fwcp
+        stz $3FFB       ; vector high bytes all $00
+        stz $3FFD
+        stz $3FFF
+        lda #$05
+        sta $3FFA       ; NMI -> irq handler (harmless)
+        sta $3FFE       ; IRQ -> $0005
+        stz $3FFC       ; RESET -> $0000
+        sta $2000       ; ACP reset request
+        lda #$10        ; rate value, run bit clear = silent
+        sta $2006
         cli
 
 frame:
@@ -123,12 +143,28 @@ frame:
         sta PTRHI
         jsr drawrow
 
+        ; ---- tone while any button held -----------------------------------
+        lda P1A
+        and P1B
+        and P2A
+        and P2B
+        and #$7F        ; ignore select bits; pressed = any 0 among bits 0-6
+        eor #$7F
+        beq quiet
+        lda #$90        ; run | value $10 -> ~424 Hz saw
+        bne setrt
+quiet:  lda #$10        ; run bit clear: ACP frozen (silent)
+setrt:  sta $2006
+
 wnmi:   .byte $CB       ; WAI
         lda NMICNT
         cmp LASTNMI
         beq wnmi
         sta LASTNMI
         jmp frame
+
+acpfw:  .byte $58, $CB, $4C, $01, $00                   ; CLI; loop: WAI; JMP
+        .byte $E6, $20, $A5, $20, $8D, $00, $80, $40    ; irq: saw -> DAC
 
 ; ---- draw 8 blocks; PTRHI = page-aligned-ish base high byte --------------
 drawrow:
