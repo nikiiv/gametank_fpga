@@ -4,14 +4,16 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
 (except explicitly manual items). Scope decisions behind this plan are in
 [REQUIREMENTS.md](REQUIREMENTS.md).
 
-## M0 — Research & scaffold (this phase)
+## M0 — Research & scaffold ✅ (completed 2026-07-06)
 
 - Hardware research: chip inventory, memory map, blitter/video/audio
   architecture from schematics + emulator source → [HARDWARE.md](HARDWARE.md)
 - Dependency selection & licensing audit → [DEPENDENCIES.md](DEPENDENCIES.md)
 - Repo skeleton, `tools/gametank-build`, `tools/gametank-test`, CI skeleton
-- **Done when:** docs complete, dependencies chosen with licenses verified,
-  build/test entry points exist.
+- **Done:** docs complete; dependencies pinned with licenses verified;
+  build/test entry points in place. Remaining open questions are tracked
+  inside their owning milestones (NTSC line timing & palette variant → M3,
+  VIA IRQ wiring → M5, ACP rate encoding → M6).
 
 ## M1 — Scaffold builds
 
