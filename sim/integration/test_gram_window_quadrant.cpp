@@ -51,6 +51,10 @@ int main() {
                       0x00, 0xC0,                 // RESET -> $C000
                       0x3F, 0x83});               // IRQ -> halt
 
+    // power-on bank is now 0 (emulator-matched): mirror the last-bank code
+    // into bank 0 so the $8000 window still sees it
+    std::copy(img.begin() + BK, img.begin() + BK + 0x4000, img.begin());
+
     sim.gtrDownloadSparse(img);
     sim.reset();
 

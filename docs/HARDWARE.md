@@ -279,7 +279,11 @@ power-of-two sizes exactly `addr & (size-1)` — 8/16/32 KB carts all
 exist in the wild), else Flash2M (RAM32K deferred post-1.0 with flash
 writes). The 74HC595 shift register is modeled bit-true on the VIA Port A
 pins (shift on PA0 rise with pre-edge PA1, latch on PA2 rise, bit 7
-forced high). Latency: $C000–$FFFF is copied to BRAM once per download
+forced high). **Power-on value (M8):** undefined on real hardware, but
+game-visible — Ganymede issues ~3,200 banked-window reads before its
+first SPI latch. The emulator's BSS-zero init shows those reads bank 0;
+the register powers up as `$80` (bank 0) to match, not the pull-up
+pattern. Latency: $C000–$FFFF is copied to BRAM once per download
 (zero run-time DDR traffic where the vectors and hot loops live); the
 banked window runs from two parity-mapped 8-byte buffers refilled two
 words per miss under a CPU clock-enable stall (~30 clk per 16 sequential

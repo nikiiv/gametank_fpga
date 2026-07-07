@@ -114,6 +114,10 @@ int main() {
         for (int gx = 0; gx < 128; gx++)
             sim.ddr[(uint32_t)(gy * 128 + gx)] = pat(gx, gy);
 
+    // power-on bank is now 0 (emulator-matched): mirror the last-bank code
+    // into bank 0 so the $8000 window still sees it
+    std::copy(img.begin() + BK, img.begin() + BK + 0x4000, img.begin());
+
     sim.gtrDownloadSparse(img);
     sim.reset();
 

@@ -98,8 +98,12 @@ wire _unused = &{1'b0, pa_q[7:3], bank_mask[7], fill_off[2:0]};
 always_ff @(posedge clk_sys) begin
     pa_q <= via_pa;
     if (reset) begin
-        bank_shift <= 8'hFF;
-        bank_mask  <= 8'hFF;    // undefined at power-on; pull-up-ish default
+        // undefined on real hardware; the emulator's BSS-zero init makes
+        // games see BANK 0 before the first SPI latch — match it (the
+        // emulator is the compatibility floor; games may read banked data
+        // before programming the register)
+        bank_shift <= 8'h80;
+        bank_mask  <= 8'h80;
     end
     else begin
         if (via_pa[0] && !pa_q[0])          // shift clock rising edge

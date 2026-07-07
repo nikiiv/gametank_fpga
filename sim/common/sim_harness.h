@@ -41,15 +41,27 @@ public:
     Vgametank top;
     uint64_t  cycles = 0;
 
+    Sim() {
+        bool all = std::getenv("GT_DDR_HOSTILE") != nullptr;
+        hBusy = all || std::getenv("GT_DDR_BUSY") != nullptr;
+        hLat  = all || std::getenv("GT_DDR_LAT")  != nullptr;
+        hGaps = all || std::getenv("GT_DDR_GAPS") != nullptr;
+    }
+
     // Cartridge backing for the abstract cart bus ($8000-$FFFF window).
     // Defaults to 0xFF (floating bus, matching the emu wrapper's tie-off).
     std::vector<uint8_t> cart = std::vector<uint8_t>(32768, 0xFF);
 
     // DDR3 model backing the HPS region at byte 0x3000_0000: GRAM at
     // offset 0 (512 KB, rtl/gram_ddr.sv), the cartridge image at offset
-    // 0x100000 (2 MB, rtl/cart.sv — CART_BASE_W). Fixed latency for
-    // determinism: a command is accepted when presented, read data starts
-    // DDR_LAT ticks later, one 64-bit beat per tick.
+    // 0x100000 (2 MB, rtl/cart.sv — CART_BASE_W). Deterministic by
+    // default: a command is accepted when presented, read data starts
+    // DDR_LAT ticks later, one 64-bit beat per tick. Set hostile=true for
+    // an adversarial (but seeded/deterministic) model: variable latency,
+    // random busy assertion, and gaps between beats — approximating the
+    // real HPS port, which sim's ideal model otherwise hides bugs from.
+    bool     hBusy = false, hLat = false, hGaps = false;
+    uint32_t ddrRng    = 0x2F6E2B1u;
     static constexpr int      DDR_LAT  = 12;
     static constexpr uint32_t DDR_MASK = 0x3FFFFF;         // 4 MB window
     static constexpr uint32_t CART_OFF = 0x100000;
@@ -62,9 +74,16 @@ public:
         return ((wordAddr << 3) - 0x30000000u) & DDR_MASK;
     }
 
+    uint32_t ddrRand() {
+        ddrRng ^= ddrRng << 13; ddrRng ^= ddrRng >> 17; ddrRng ^= ddrRng << 5;
+        return ddrRng;
+    }
+
     void ddrStep() {
         top.ddr_dout_ready = 0;
-        top.ddr_busy = 0;
+        // hostile: assert busy ~30% of idle cycles (commands must wait)
+        bool busyNow = hBusy && (ddrRand() % 10 < 3);
+        top.ddr_busy = busyNow;
 
         if (!ddrJobs.empty()) {
             auto& j = ddrJobs.front();
@@ -74,15 +93,19 @@ public:
                 for (int b = 7; b >= 0; b--) v = (v << 8) | ddr[(a + b) & DDR_MASK];
                 top.ddr_dout = v;
                 top.ddr_dout_ready = 1;
-                if (++j.beat == j.beats) ddrJobs.erase(ddrJobs.begin());
+                ++j.beat;
+                // hostile: random gap before the next beat
+                j.due = cycles + 1 + (hGaps ? (ddrRand() % 4) : 0);
+                if (j.beat == j.beats) ddrJobs.erase(ddrJobs.begin());
             }
         }
 
-        if (top.ddr_rd && ddrJobs.size() < 4) {
-            ddrJobs.push_back({cycles + DDR_LAT, ddrOff(top.ddr_addr),
+        if (top.ddr_rd && !busyNow && ddrJobs.size() < 4) {
+            uint64_t lat = DDR_LAT + (hLat ? (ddrRand() % 40) : 0);
+            ddrJobs.push_back({cycles + lat, ddrOff(top.ddr_addr),
                                top.ddr_burstcnt, 0});
         }
-        if (top.ddr_we) {
+        if (top.ddr_we && !busyNow) {
             uint32_t byteOff = ddrOff(top.ddr_addr);
             for (int b = 0; b < 8; b++)
                 if (top.ddr_be & (1 << b))

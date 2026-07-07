@@ -94,9 +94,9 @@ assign audio_r = {dac, 8'h00};
 // real hardware never stalls; the raster keeps real time throughout).
 logic [2:0] ce_div;
 logic       cpu_ce;
-logic       gram_stall;
-logic       cart_stall;
-logic       blit_starve;
+logic       gram_stall  /*verilator public_flat_rd*/;
+logic       cart_stall  /*verilator public_flat_rd*/;
+logic       blit_starve /*verilator public_flat_rd*/;
 
 always_ff @(posedge clk_sys) begin
     if (reset) begin

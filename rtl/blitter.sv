@@ -65,11 +65,14 @@ module blitter
 );
 
 // Parameter registers (survive blits; only counters change during a copy)
-logic [7:0] pVX, pVY, pGX, pGY, pW, pH, pCOLOR;
+logic [7:0] pVX /*verilator public_flat_rd*/, pVY /*verilator public_flat_rd*/,
+            pGX /*verilator public_flat_rd*/, pGY /*verilator public_flat_rd*/,
+            pW  /*verilator public_flat_rd*/, pH  /*verilator public_flat_rd*/,
+            pCOLOR /*verilator public_flat_rd*/;
 
 // Engine state
 logic [7:0] cVX, cVY, cGX, cGY, cW, cH;
-logic       trigger, init, running;
+logic       trigger /*verilator public_flat_rd*/, init, running;
 
 // Exact-duration IRQ
 logic        pending;

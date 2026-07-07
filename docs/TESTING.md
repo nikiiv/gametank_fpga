@@ -104,6 +104,30 @@ path (which is also what lockstep carts exercise functionally). The audible
 end-to-end check is the pads_demo boot cart's press-a-button tone on
 hardware.
 
+## Adversarial DDR model & gameplay lockstep (M8)
+
+The harness's DDR3 model is deterministic and idealized by default; set
+`GT_DDR_HOSTILE=1` (or `GT_DDR_BUSY/LAT/GAPS` individually) for a seeded
+adversarial model — variable latency, busy assertion, beat gaps — that
+approximates the real HPS port. The Ganymede sprite hunt showed idealized
+timing hides real races. Similarly `GT_RDY_GAPS=1` runs the standalone CPU
+harness (Klaus, WAI/STP) with random RDY deassertion, modeling the core's
+stall behavior.
+
+The emulator lockstep patch supports gameplay lockstep of real games:
+`GTE_LOCKSTEP_INPUT="flip:mask,..."` injects pad input at page-flip
+indices (same schedule as the sim side — see
+`sim/system/test_gany_lockstep.cpp`), and `GTE_ZERO_POWERON=1` zeroes
+RAM/VRAM/GRAM and control registers for determinism. Caveat learned the
+hard way: the emulator's headless ACP timing is broken (`--nosound` runs
+audio off-rate), so games that sync loading/logic to the ACP diverge from
+it after the menu — clean-vs-hostile comparison within our own core is
+the reliable differential there.
+
+Power-on state is game-visible: Ganymede does thousands of banked-window
+reads before its first bank latch, so the cart bank register must power
+up matching the emulator (bank 0), not the pull-up value.
+
 ## Adding a test
 
 1. Write a minimal test cart in `sim/testroms/<name>/` (cc65 project, makefile
