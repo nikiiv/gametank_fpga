@@ -1,16 +1,16 @@
-// Regression test for the Ganymede popping-sprites bug (M8, part 2): the
-// SDK's draw-queue helpers rewrite $2005 from the MAINLINE (RAM-bank dance
-// for the queue tables: 0 -> $40 -> bank) while IRQ-chained blits are
-// still in flight. The emulator is immune — it CatchUp()s the blitter
-// before every $2005/$2007 write (gte.cpp) — but a concurrent engine that
-// samples banking[2:0] (GRAM bank) and banking[5:4] (clip) live per pixel
-// re-sources the rest of the blit: sprite chunks from the wrong GRAM bank
-// (often zeros -> transparent -> invisible).
+// Emulator-fidelity test for mid-blit banking writes: the emulator
+// live-samples $2005 — CatchUp() advances the blitter only to CURRENT CPU
+// time before the write applies (blitter.cpp:45-49), so pixels blitted
+// before the write use the old GRAM bank and pixels after it use the new
+// one. (An earlier M8 fix misread CatchUp as running the blit to
+// completion and stalled such writes — that DIVERGED from the emulator
+// and is reverted; this test locks in the true semantics.)
 //
 // Here: a 16x16 sprite blit from GRAM bank 2 is triggered, and the very
-// next mainline instruction writes $2005 = $40 (bank bits -> 0). Emulator
-// semantics: the whole sprite still comes from bank 2. Every pixel is
-// asserted against the bank-2 pattern.
+// next mainline instruction writes $2005 = $40 (bank bits -> 0, whose
+// GRAM holds zeros). Expectation: a clean split — an initial run of
+// bank-2 pixels (the write lands a few cycles into the blit), then all
+// zeros; no interleaving, and the split lands strictly inside the blit.
 
 #include "sim_harness.h"
 
@@ -75,18 +75,26 @@ int main() {
     while (sim.sysram(0x001F) != 0xC3 && sim.cycles < guard) sim.tick();
     CHECK(sim.sysram(0x001F) == 0xC3, "cart did not finish");
 
-    int bad = 0;
-    for (int y = 0; y < 16; y++)
-        for (int x = 0; x < 16; x++) {
-            uint8_t got  = sim.vramRead(0, (uint16_t)((32+y)*128 + 32+x));
-            uint8_t want = pat2(x, y);
-            if (got != want && bad++ < 8)
-                std::fprintf(stderr, "px(%d,%d): %02x want %02x\n",
-                             x, y, got, want);
+    // scan in blit order (row-major): must be pat2-prefix then zero-suffix
+    int split = -1, bad = 0;
+    for (int i = 0; i < 256 && bad == 0; i++) {
+        int x = i & 15, y = i >> 4;
+        uint8_t got = sim.vramRead(0, (uint16_t)((32+y)*128 + 32+x));
+        if (split < 0) {
+            if (got == pat2(x, y)) continue;        // still in the old-bank run
+            if (got == 0) { split = i; continue; }  // the write landed here
+            bad++;
         }
-    CHECK(bad == 0, "%d pixels re-sourced by the mid-blit banking write", bad);
-
-    std::printf("PASS blit_bank_race: mid-blit $2005 write waits for the "
-                "engine (CatchUp semantics)\n");
+        else if (got != 0) bad++;
+        if (bad)
+            std::fprintf(stderr, "px %d (%d,%d): %02x (split at %d)\n",
+                         i, x, y, got, split);
+    }
+    CHECK(bad == 0, "pixels interleaved across the banking write");
+    CHECK(split > 0, "the $2005 write beat the first pixel (split=%d)", split);
+    CHECK(split < 256, "the write never affected the blit");
+    std::printf("PASS blit_bank_race: live-sampled mid-blit $2005 write "
+                "splits the blit cleanly at pixel %d (emulator semantics)\n",
+                split);
     return 0;
 }

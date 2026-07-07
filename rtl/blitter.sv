@@ -26,9 +26,6 @@ module blitter
     input  logic        clk_sys,
     input  logic        reset,
     input  logic        cpu_ce,
-    input  logic        eng_ce,      // engine step base: keeps ticking while
-                                     // the CPU stalls on a mid-blit register
-                                     // write (CatchUp semantics, see `busy`)
 
     // parameter writes (routed by mainbus when COPY_ENABLE=1; strobe-latched)
     input  logic        param_we,
@@ -55,14 +52,6 @@ module blitter
     // restarts the engine while it still drains the previous blit's tail
     // (the M8 Ganymede sprite bug; repro: blit_contention).
     output logic        starved,
-
-    // A blit is in flight (trigger pending, engine running, or the last
-    // pixel's VRAM write still queued). The core top stalls CPU writes to
-    // $2005/$2007/params on this — the emulator (the compatibility floor)
-    // CatchUp()s the blitter before those writes, so software may rewrite
-    // banking mid-blit and expect the whole blit to use the old value
-    // (the SDK draw queue does exactly that; M8 Ganymede bug part 2).
-    output logic        busy,
     output logic [18:0] gram_addr,
     input  logic [7:0]  gram_q,
 
@@ -144,9 +133,8 @@ assign gram_paddr = {banking[2:0], gy_eff[7], gx_eff[7],
                      gy_eff[6:0], gx_eff[6:0]};
 assign gram_want  = running2 && !dma_ctl[3];   // colorfill reads nothing
 
-wire engine_step = eng_ce && (!gram_want || gram_ready);
+wire engine_step = cpu_ce && (!gram_want || gram_ready);
 assign starved = gram_want && !gram_ready;
-assign busy = trigger | init | running | px_valid;
 
 // ---- registers ------------------------------------------------------------
 // Pixel-op pipeline: values captured at the strobe, used over the window
@@ -223,7 +211,7 @@ always_ff @(posedge clk_sys) begin
             end
         end
 
-        if (eng_ce)
+        if (cpu_ce)
             win_ph <= '0;
         else
             win_ph <= win_ph + 3'd1;

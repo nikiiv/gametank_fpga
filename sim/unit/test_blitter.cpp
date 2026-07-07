@@ -119,7 +119,6 @@ struct Rtl {
     void reset() {
         top.reset = 1;
         top.cpu_ce = 0;
-        top.eng_ce = 0;
         top.param_we = 0;
         top.gram_ready = 1;   // BRAM-style always-ready (no DDR3 model here)
         for (int i = 0; i < 8; i++) clk1();
@@ -134,10 +133,8 @@ struct Rtl {
     // pulse right after the strobe with latched values).
     void cpu(int wAddr = -1, uint8_t wData = 0) {
         top.cpu_ce = 1;
-        top.eng_ce = 1;
         clk1();
         top.cpu_ce = 0;
-        top.eng_ce = 0;
         cpuCycle++;
         if (top.irq && irqCycle < 0) irqCycle = cpuCycle;
         if (wAddr >= 0) {

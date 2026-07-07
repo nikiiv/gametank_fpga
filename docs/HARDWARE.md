@@ -313,17 +313,6 @@ previous blit's still-draining tail — clipped/garbled sprites (Ganymede;
 repro locked in as `blit_contention`). With the freeze, the IRQ counter
 and engine can never diverge; the console time-base stretches while the
 raster keeps real time — same documented-deviation class as the CPU
-GRAM-window and cart-miss stalls. **Amended again (M8, CatchUp
-semantics):** the emulator — the compatibility floor — runs
-`blitter->CatchUp()` before every `$2005`/`$2007`/blit-param write
-(`gte.cpp`), i.e. an in-flight blit fully completes before those writes
-take effect. The SDK's draw queue relies on this: its mainline helpers
-rewrite `$2005` (RAM-bank dance for the queue tables) while IRQ-chained
-blits fly, which on a live-sampling engine re-sources the rest of the
-blit from the wrong GRAM bank (Ganymede's invisible/popping sprites;
-repro `blit_bank_race` — 248 of 256 pixels lost). `rtl/mainbus.sv` now
-pends such writes while `blitter.busy`, stalls the CPU, keeps the engine
-stepping on a separate enable (`eng_ce`) until it drains, then commits.
-The completion IRQ still fires at exactly W×H CPU-visible cycles. System RAM 32 KB + framebuffers
+GRAM-window and cart-miss stalls. System RAM 32 KB + framebuffers
 32 KB + audio RAM 4 KB stay in BRAM (M4 build: 25% BRAM, 23% logic).
 The M7 cartridge shares the DDR3 client.

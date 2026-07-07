@@ -164,19 +164,13 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
 - OSD polish (config string, reset, aspect options), analog video verified
 - Docs finalized; release `.rbf` + submission prep for MiSTer-devel
 - **Done when:** library passes; manual on-hardware checklist signed off.
-- **Progress:** Ganymede sprite corruption root-caused and fixed in two
-  layers. (1) The blit engine could lag its exact-duration IRQ under DDR
-  contention, and IRQ-chained blits restarted the engine over the previous
-  blit's tail — fixed by freezing the console clock-enable on engine
-  starvation (repro `blit_contention`). (2) The emulator CatchUp()s the
-  blitter before `$2005`/`$2007`/param writes, and the SDK's draw queue
-  rewrites banking mid-blit relying on it — our live-sampled banking
-  re-sourced in-flight blits from the wrong GRAM bank (invisible idle
-  sprites, popping textures). Fixed with deferred commits: such writes pend
-  while the blit drains on a separate engine enable, CPU stalled (repro
-  `blit_bank_race`). Also new: `gram_window_quadrant` locks in the SDK's
-  1×1-dummy-blit quadrant-select idiom. See HARDWARE.md §FPGA memory
-  budget (M8 amendments).
+- **Progress:** Ganymede sprite corruption root-caused and fixed — the blit
+  engine could lag its exact-duration IRQ under DDR contention (cart fetches
+  vs GRAM prefetch), and IRQ-chained sprite blits restarted the engine over
+  the previous blit's tail. Fixed by freezing the console clock-enable on
+  engine starvation (`blitter.starved`); repro test `blit_contention`
+  (IRQ-chained 4×16 sprites with banked-window execution) failed before,
+  passes after. See HARDWARE.md §FPGA memory budget (M8 amendment).
 
 ## Post-1.0
 

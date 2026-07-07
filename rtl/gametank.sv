@@ -94,39 +94,20 @@ assign audio_r = {dac, 8'h00};
 // real hardware never stalls; the raster keeps real time throughout).
 logic [2:0] ce_div;
 logic       cpu_ce;
-logic       eng_ce;
 logic       gram_stall;
 logic       cart_stall;
 logic       blit_starve;
-logic       blit_busy;
-logic       catchup_stall;
-
-// CatchUp stall (from mainbus): a $2005/$2007/param write arrived while a
-// blit was in flight. The emulator (compatibility floor) completes the blit
-// before such writes take effect — here the write is pended, the CPU waits,
-// and the ENGINE keeps stepping on eng_ce to drain. The duration counter
-// runs on cpu_ce, so the completion IRQ still fires at exactly W*H
-// CPU-visible cycles — provably after the engine is done.
 
 always_ff @(posedge clk_sys) begin
     if (reset) begin
         ce_div <= '0;
         cpu_ce <= 1'b0;
-        eng_ce <= 1'b0;
     end
-    else if (gram_stall || cart_stall || blit_starve) begin
+    else if (gram_stall || cart_stall || blit_starve)
         cpu_ce <= 1'b0;
-        eng_ce <= 1'b0;
-    end
-    else if (catchup_stall) begin
-        ce_div <= ce_div + 3'd1;
-        cpu_ce <= 1'b0;
-        eng_ce <= (ce_div == 3'd7);
-    end
     else begin
         ce_div <= ce_div + 3'd1;
         cpu_ce <= (ce_div == 3'd7);
-        eng_ce <= (ce_div == 3'd7);
     end
 end
 
@@ -146,9 +127,6 @@ mainbus mainbus
     .clk_sys       (clk_sys),
     .reset         (reset),
     .cpu_ce        (cpu_ce),
-
-    .blit_busy     (blit_busy),
-    .catchup_stall (catchup_stall),
 
     .cart_addr     (cart_addr),
     .cart_rd       (cart_rd),
@@ -269,7 +247,6 @@ blitter blitter
     .clk_sys    (clk_sys),
     .reset      (reset),
     .cpu_ce     (cpu_ce),
-    .eng_ce     (eng_ce),
 
     .param_we   (blit_param_we),
     .param_addr (win_addr[2:0]),
@@ -284,7 +261,6 @@ blitter blitter
     .gram_addr  (blit_gram_addr),
     .gram_q     (blit_gram_q),
     .starved    (blit_starve),
-    .busy       (blit_busy),
 
     .vram_we    (blit_vram_we),
     .vram_addr  (blit_vram_addr),
@@ -299,7 +275,6 @@ gram_ddr gram_ddr
     .clk_sys        (clk_sys),
     .reset          (reset),
     .cpu_ce         (cpu_ce),
-    .eng_ce         (eng_ce),
 
     .param_we       (blit_param_we),
     .param_addr     (win_addr[2:0]),
