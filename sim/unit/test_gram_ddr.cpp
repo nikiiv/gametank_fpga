@@ -67,7 +67,7 @@ struct H {
 
     void reset() {
         top.reset = 1;
-        top.cpu_ce = 0;
+        top.cpu_ce = 0; top.eng_ce = 0;
         top.param_we = 0;
         top.blit_want = 0;
         top.cpu_we = top.cpu_rd = 0;
@@ -76,7 +76,7 @@ struct H {
     }
 
     void param(int a, uint8_t v) {   // one CPU cycle with a param pulse
-        top.cpu_ce = 1; clk1(); top.cpu_ce = 0;
+        top.cpu_ce = 1; top.eng_ce = 1; clk1(); top.cpu_ce = 0; top.eng_ce = 0;
         top.param_we = 1; top.param_addr = a; top.param_data = v;
         clk1();
         top.param_we = 0;
@@ -93,11 +93,11 @@ struct H {
         top.blit_paddr = paddr;
         top.blit_want = 1;
         for (long i = 0; i < maxCpu; i++) {
-            top.cpu_ce = 1;
+            top.cpu_ce = 1; top.eng_ce = 1;
             top.eval();                 // settle ready for this candidate
             bool step = top.blit_ready;
             clk1();
-            top.cpu_ce = 0;
+            top.cpu_ce = 0; top.eng_ce = 0;
             if (step) {
                 top.blit_addr = paddr;  // engine registers at the step
                 top.blit_want = 0;

@@ -31,6 +31,8 @@ module gram_ddr
     input  logic        clk_sys,
     input  logic        reset,
     input  logic        cpu_ce,
+    input  logic        eng_ce,      // blit engine step base (cpu_ce that
+                                     // keeps running during CatchUp stalls)
 
     // parameter-write snoop (same bus the blitter sees)
     input  logic        param_we,
@@ -73,7 +75,7 @@ localparam logic [28:0] GRAM_BASE_W = 29'h0600_0000;  // word (byte>>3)
 
 // Low paddr bits select within a served beat; blit_addr's row bits are
 // implied by the slot latched at the step; other bits are engine-side.
-wire _unused = &{1'b0, dma_ctl[7:5], dma_ctl[2:0], banking[7:3],
+wire _unused = &{1'b0, cpu_ce, dma_ctl[7:5], dma_ctl[2:0], banking[7:3],
                  blit_paddr[2:0], blit_addr[18:15], blit_addr[13:7]};
 
 function automatic logic [7:0] gcarry(input logic [7:0] v);
@@ -121,7 +123,7 @@ assign blit_ready = !blit_want || dma_ctl[3] || hit0 || hit1;  // colorfill need
 logic srv_slot;
 
 always_ff @(posedge clk_sys) begin
-    if (cpu_ce && blit_want && blit_ready)
+    if (eng_ce && blit_want && blit_ready)
         srv_slot <= hit1;
     blit_q <= rowbuf[{srv_slot, blit_addr[14], blit_addr[6:0]}];
 end

@@ -27,6 +27,13 @@ module mainbus
     input  logic        reset,
     input  logic        cpu_ce,      // 3.579545 MHz strobe: CPU RDY
 
+    // CatchUp defer (emulator semantics: the blitter finishes any in-flight
+    // blit before a $2005/$2007/param write takes effect): such writes are
+    // pended while blit_busy, the CPU is stalled via catchup_stall, and the
+    // commit happens once the engine drains.
+    input  logic        blit_busy,
+    output logic        catchup_stall,
+
     output logic [14:0] cart_addr,   // $8000-$FFFF window (strobe-latched)
     output logic        cart_rd,     // 1-clk pulse: read latched this strobe
     input  logic [7:0]  cart_data,   // must be valid within the 8-clk window
@@ -96,14 +103,49 @@ logic [7:0] banking /*verilator public_flat_rd*/;
 
 wire reg_write = cpu_we && (cpu_ab[15:3] == 13'h400);  // $2000-$2007
 
+// CatchUp-sensitive write presented at this strobe?
+wire cu_hit = cpu_we &&
+    ((cpu_ab[15:3] == 13'h400 &&
+      (cpu_ab[2:0] == 3'd5 || cpu_ab[2:0] == 3'd7)) ||   // $2005 / $2007
+     (cpu_ab[15:14] == 2'b01 && dma_ctl[0]));            // blit params
+
+// one-deep pend: kind 0 = $2005, 1 = $2007, 2 = blit param (address is in
+// win_addr, which holds through the stall — no strobes fire meanwhile)
+logic       cu_pend;
+logic [1:0] cu_kind;
+logic [7:0] cu_val;
+logic       cu_apply;   // 1-clk pulse when the engine has drained
+
+assign catchup_stall = cu_pend;
+
+always_ff @(posedge clk_sys) begin
+    cu_apply <= 1'b0;
+    if (reset)
+        cu_pend <= 1'b0;
+    else if (cpu_ce && cu_hit && blit_busy) begin
+        cu_pend <= 1'b1;
+        cu_val  <= cpu_do;
+        cu_kind <= (cpu_ab[15:14] == 2'b01) ? 2'd2 :
+                   (cpu_ab[2:0] == 3'd5)    ? 2'd0 : 2'd1;
+    end
+    else if (cu_pend && !blit_busy) begin
+        cu_pend  <= 1'b0;
+        cu_apply <= 1'b1;
+    end
+end
+
 always_ff @(posedge clk_sys) begin
     if (reset) begin
         banking <= '0;
         dma_ctl <= '0;
     end
-    else if (cpu_ce && reg_write) begin
-        if (cpu_ab[2:0] == 3'd5) banking <= cpu_do;
-        if (cpu_ab[2:0] == 3'd7) dma_ctl <= cpu_do;
+    else begin
+        if (cpu_ce && reg_write && !(cu_hit && blit_busy)) begin
+            if (cpu_ab[2:0] == 3'd5) banking <= cpu_do;
+            if (cpu_ab[2:0] == 3'd7) dma_ctl <= cpu_do;
+        end
+        if (cu_apply && cu_kind == 2'd0) banking <= cu_val;
+        if (cu_apply && cu_kind == 2'd1) dma_ctl <= cu_val;
     end
 end
 
@@ -145,7 +187,8 @@ always_ff @(posedge clk_sys) begin
     vram_we       <= cpu_ce && vram_sel  && cpu_we;
     gram_we       <= cpu_ce && gram_sel  && cpu_we;
     gram_rd       <= cpu_ce && gram_sel  && !cpu_we;
-    blit_param_we <= cpu_ce && param_sel && cpu_we;
+    blit_param_we <= (cpu_ce && param_sel && cpu_we && !blit_busy) ||
+                     (cu_apply && cu_kind == 2'd2);
     pad1_rd       <= cpu_ce && (cpu_ab == 16'h2008) && !cpu_we;
     pad2_rd       <= cpu_ce && (cpu_ab == 16'h2009) && !cpu_we;
     // The VIA samples wen/ren at its phi2 edges (the strobes), so these are
