@@ -61,6 +61,7 @@ public:
     // random busy assertion, and gaps between beats — approximating the
     // real HPS port, which sim's ideal model otherwise hides bugs from.
     bool     hBusy = false, hLat = false, hGaps = false;
+    int      forceBusy = 0;   // deterministic test hook: hold DDR busy N ticks
     uint32_t ddrRng    = 0x2F6E2B1u;
     static constexpr int      DDR_LAT  = 12;
     static constexpr uint32_t DDR_MASK = 0x3FFFFF;         // 4 MB window
@@ -82,7 +83,8 @@ public:
     void ddrStep() {
         top.ddr_dout_ready = 0;
         // hostile: assert busy ~30% of idle cycles (commands must wait)
-        bool busyNow = hBusy && (ddrRand() % 10 < 3);
+        bool busyNow = forceBusy > 0 || (hBusy && (ddrRand() % 10 < 3));
+        if (forceBusy > 0) forceBusy--;
         top.ddr_busy = busyNow;
 
         if (!ddrJobs.empty()) {

@@ -26,8 +26,8 @@ CFLAGS     := -std=c++17 -O2 -I$(COMMON)
 # <tier>/test_<name>.cpp against RTL_SRCS. Klaus import-gate tests have
 # explicit rules below (extra fetch/build inputs and arguments).
 # ---------------------------------------------------------------------------
-UNIT_TESTS        := video_timing blitter gram_ddr cart pads_via acp mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp
-INTEGRATION_TESTS := cart_ram_pattern cart_download cart_osd_load cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene cart_pads_demo blit_contention gram_window_quadrant blit_bank_race gram_cpu_hostile flash_persist cart_cache vidpage_latch via_shadow
+UNIT_TESTS        := video_timing blitter gram_ddr cart pads_via acp mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp cpu_zpx cpu_bit_ops
+INTEGRATION_TESTS := cart_ram_pattern cart_download cart_osd_load cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene cart_pads_demo blit_contention gram_window_quadrant blit_bank_race gram_cpu_hostile gram_write_backpressure flash_persist cart_cache vidpage_latch via_shadow
 
 # gametank-test --test NAME passes TEST=NAME
 TEST ?=
@@ -136,6 +136,16 @@ $(OUT)/unit_cpu_klaus: unit/test_cpu_klaus.cpp common/cpu65_harness.h $(CPU_SRCS
 $(OUT)/unit_cpu_wai_stp: unit/test_cpu_wai_stp.cpp common/cpu65_harness.h $(CPU_SRCS) | $(OUT)
 	@mkdir -p obj_dir/unit_cpu_wai_stp
 	$(VERILATOR) $(VFLAGS_CPU) --Mdir obj_dir/unit_cpu_wai_stp -CFLAGS "$(CFLAGS)" \
+		-o $(abspath $@) $(CPU_SRCS) $(abspath $<)
+
+$(OUT)/unit_cpu_zpx: unit/test_cpu_zpx.cpp common/cpu65_harness.h $(CPU_SRCS) | $(OUT)
+	@mkdir -p obj_dir/unit_cpu_zpx
+	$(VERILATOR) $(VFLAGS_CPU) --Mdir obj_dir/unit_cpu_zpx -CFLAGS "$(CFLAGS)" \
+		-o $(abspath $@) $(CPU_SRCS) $(abspath $<)
+
+$(OUT)/unit_cpu_bit_ops: unit/test_cpu_bit_ops.cpp common/cpu65_harness.h $(CPU_SRCS) | $(OUT)
+	@mkdir -p obj_dir/unit_cpu_bit_ops
+	$(VERILATOR) $(VFLAGS_CPU) --Mdir obj_dir/unit_cpu_bit_ops -CFLAGS "$(CFLAGS)" \
 		-o $(abspath $@) $(CPU_SRCS) $(abspath $<)
 
 run-unit-cpu_klaus_6502: $(OUT)/unit_cpu_klaus klaus/upstream/.stamp

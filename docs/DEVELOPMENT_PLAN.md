@@ -195,6 +195,18 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
   (heroine center-screen on grass, clean idle-animation deltas). The
   earlier "different procedural level" observations were an artifact of
   the derailed CPU execution, not real seed divergence.
+- **Progress (ported from the parallel `gametank_fix_sprites`
+  investigation, which independently converged on the same Rockwell-ops
+  root cause):** CPU GRAM-window **writes** now backpressure like reads —
+  the single pending-write slot could be silently overwritten during an
+  HPS DDR busy stretch, dropping bytes from tight sprite-sheet uploads
+  (plain `STA abs` streams carry no dummy read to throttle them; 127 of
+  128 bytes lost in the repro). `rtl/gram_ddr.sv` stalls the CPU
+  clock-enable on a pending write (with an idle fast path) and gains an
+  8-word read cache for interleaved sprite-table scans. Tests:
+  `gram_write_backpressure` (strengthened to an unrolled `LDA #/STA abs`
+  stream — the `STA abs,X` version self-throttled via its dummy read and
+  missed the bug), plus directed CPU tests `cpu_bit_ops` and `cpu_zpx`.
 
 ## Post-1.0
 
