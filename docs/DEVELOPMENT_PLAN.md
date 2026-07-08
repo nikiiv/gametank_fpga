@@ -228,9 +228,25 @@ to M9 below.
 Climb Race) on hardware, and its flash save survives a core power
 cycle.** Hardware gate MET: an automated MGL boot of Ganymede + a
 virtual-gamepad Start press enters New Game, which renders the HP HUD
-and a live, input-responsive platform level (the main game flash-writes
-its save area on entry — it froze there before M8's flash-write set).
-Round-trip persistence verified in sim (`flash_save_roundtrip`).
+and a live, input-responsive platform level. On a clean SD, playing New
+Game creates `saves/GameTank/Ganymede.sav` (2 MB) whose content differs
+from the pristine ROM (the game wrote real save data); it survives a
+reload unchanged, and a deliberately-corrupted save overlays on reload
+(restore path confirmed). Also verified in sim (`flash_save_roundtrip`).
+
+Two string-level bugs blocked saving — same class of mistake, a name that
+must match something the framework derives:
+- **CONF_STR `F1,GTR` → `FS1,GTR`.** MiSTer's Main only auto-mounts
+  `<rom>.sav` (fires `img_mounted`, accepts `sd_wr`) for file entries with
+  the `S` save-association flag; without it no save slot exists, so writes
+  vanish and nothing mounts (reference: Gameboy's `FS1,…`).
+- **First-save bootstrap.** `savectl` had gated every save on a mounted
+  file, but on first play none exists — deadlock. Saving is now enabled
+  whenever a cartridge is present; `img_mounted` gates only restore, and
+  Main creates the `.sav` on the first `sd_wr`.
+- Deploy note: the MGL `<rbf>` does a substring match, so a stray
+  `xGameTank.rbf` shadowed `GameTank.rbf`; keep the dev folder to a single
+  `GameTank*.rbf`.
 
 - Flash-save persistence to SD (flash-write *emulation* shipped in M8;
   saves currently live in the DDR3 cart image and die with the session —
