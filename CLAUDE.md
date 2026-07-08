@@ -5,7 +5,7 @@ FPGA implementation of the GameTank (open-source 8-bit console: W65C02S @
 coprocessor) as a MiSTer core for the DE10-Nano. No SDRAM add-on — cart in
 HPS DDR3, everything else in BRAM.
 
-**State: M0 (research) complete. Next: M1 — scaffold + first `.rbf`.**
+**State: M0–M8 complete (Ganymede compatibility campaign done). Next: M9 — library sweep & release prep.**
 
 ## Read these before writing RTL
 
