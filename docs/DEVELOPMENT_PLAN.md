@@ -222,6 +222,12 @@ to M9 below.
 
 ## M9 — Library sweep & release
 
+### M9.1 — Flash-save persistence (in progress)
+
+**Acceptance gate: Ganymede boots into the main game (New Game — not
+Climb Race) on hardware, and its flash save survives a core power
+cycle.**
+
 - Flash-save persistence to SD (flash-write *emulation* shipped in M8;
   saves currently live in the DDR3 cart image and die with the session —
   Ganymede's main game saves through it, so it leads M9). Emulator
