@@ -88,20 +88,22 @@ assign audio_r = {dac, 8'h00};
 
 // 3.579545 MHz clock-enable for the console (clk_sys / 8): the CPU's RDY
 // strobe. All bus transactions latch at this strobe (see mainbus.sv).
-// gram_stall/cart_stall freeze the cadence while a CPU read waits on DDR3
-// (documented deviation — real hardware never stalls; GRAM CPU reads are
-// rare, cart misses are kept rare by the prefetch in rtl/cart.sv).
+// gram_stall/cart_stall freeze the cadence while a CPU read waits on DDR3;
+// blit_starve freezes it while the blitter waits on a GRAM row so the
+// engine can never lag its exact-duration IRQ (documented deviations —
+// real hardware never stalls; the raster keeps real time throughout).
 logic [2:0] ce_div;
-logic       cpu_ce;
-logic       gram_stall;
-logic       cart_stall;
+logic       cpu_ce /*verilator public_flat_rd*/;
+logic       gram_stall  /*verilator public_flat_rd*/;
+logic       cart_stall  /*verilator public_flat_rd*/;
+logic       blit_starve /*verilator public_flat_rd*/;
 
 always_ff @(posedge clk_sys) begin
     if (reset) begin
         ce_div <= '0;
         cpu_ce <= 1'b0;
     end
-    else if (gram_stall || cart_stall)
+    else if (gram_stall || cart_stall || blit_starve)
         cpu_ce <= 1'b0;
     else begin
         ce_div <= ce_div + 3'd1;
@@ -109,7 +111,7 @@ always_ff @(posedge clk_sys) begin
     end
 end
 
-logic [13:0] win_addr;
+logic [13:0] win_addr /*verilator public_flat_rd*/;
 logic [7:0]  win_din;
 logic        cpu_vram_we, cpu_gram_we, cpu_gram_rd, blit_param_we;
 logic [7:0]  vram_a_dout, gram_b_dout;
@@ -128,6 +130,8 @@ mainbus mainbus
 
     .cart_addr     (cart_addr),
     .cart_rd       (cart_rd),
+    .cart_wr       (cart_wr),
+    .cart_wdata    (cart_wdata),
     .cart_data     (cart_present ? cart_int_data : cart_data),
 
     .win_addr      (win_addr),
@@ -148,7 +152,7 @@ mainbus mainbus
 
     .via_wen       (via_wen),
     .via_ren       (via_ren),
-    .via_q         (via_q),
+    .via_q         (via_shadow_q),
 
     .acp_reset_we  (acp_reset_we),
     .acp_nmi_we    (acp_nmi_we),
@@ -156,7 +160,7 @@ mainbus mainbus
     .aram_we       (aram_we),
     .aram_q        (aram_q),
 
-    .irq           (blit_irq | via_irq),   // wire-OR per HARDWARE.md
+    .irq           (blit_irq),   // via_irq suppressed — see VIA shadow below
     .nmi           (vsync_nmi && dma_ctl[2])   // VSYNC_NMI enable
 );
 
@@ -178,9 +182,29 @@ pads pads
 // 6522 VIA at $2800-$2FFF. Its phi2 is the CPU cycle: `falling` = the RDY
 // strobe (end of cycle, when writes commit), `rising` = mid-window. Port A
 // becomes the cartridge bank SPI in M7; until then ports float high.
-logic       via_wen, via_ren;
+logic       via_wen, via_ren /*verilator public_flat_rd*/;
 logic [7:0] via_q;
 logic       via_irq;
+
+// The compatibility floor (GameTankEmulator) models the VIA as a bare
+// register file: reads return the last byte written, timers never tick,
+// IRQs never fire — and shipped software depends on that. Ganymede sweeps
+// all 16 VIA registers at boot as an entropy source; live via6522 timer
+// values steer its level generator away from the emulator's output (M8).
+// CPU reads are therefore served from this write-shadow and via_irq is
+// not raised; the real via6522 still runs underneath for its one live
+// role — Port A driving the cartridge bank SPI (write-only from the CPU's
+// point of view).
+logic [7:0] via_shadow [0:15];
+wire  [7:0] via_shadow_q = via_shadow[win_addr[3:0]];
+always_ff @(posedge clk_sys) begin
+    if (reset) begin
+        for (int i = 0; i < 16; i++) via_shadow[i] <= 8'h00;
+    end
+    else if (via_wen)
+        via_shadow[win_addr[3:0]] <= win_din;
+end
+wire _via_q_unused = &{1'b0, via_q, via_irq};
 logic       via_rising;
 
 always_ff @(posedge clk_sys)
@@ -258,6 +282,7 @@ blitter blitter
     .gram_ready (blit_gram_ready),
     .gram_addr  (blit_gram_addr),
     .gram_q     (blit_gram_q),
+    .starved    (blit_starve),
 
     .vram_we    (blit_vram_we),
     .vram_addr  (blit_vram_addr),
@@ -307,8 +332,9 @@ gram_ddr gram_ddr
 
 // Cartridge controller (M7): DDR3-backed .gtr with VIA Port A bank SPI.
 // Shares the DDRAM port with the GRAM prefetcher through ddr_mux.
-logic        cart_rd, cart_present;
-logic [7:0]  cart_int_data;
+logic        cart_rd, cart_wr, cart_present;
+logic [7:0]  cart_wdata;
+logic [7:0]  cart_int_data /*verilator public_flat_rd*/;
 logic        g_rd, g_we, g_dout_ready, g_busy;
 logic [28:0] g_addr;
 logic [63:0] g_din;
@@ -325,6 +351,8 @@ cart cart
 
     .cart_addr      (cart_addr),
     .cart_rd        (cart_rd),
+    .cart_wr        (cart_wr),
+    .cart_wdata     (cart_wdata),
     .cart_data      (cart_int_data),
     .cart_stall     (cart_stall),
     .cart_present   (cart_present),
@@ -395,10 +423,27 @@ vram vram
     .a_din  (blit_vram_we ? blit_vram_din : win_din),
     .a_dout (vram_a_dout),
 
-    .b_page (dma_ctl[1]),   // VID_OUT_PAGE
+    .b_page (vid_page),     // VID_OUT_PAGE, latched at active-video start
     .b_addr (vram_b_addr),
     .b_dout (vram_b_dout)
 );
+
+// The emulator — the compatibility floor — samples VID_OUT_PAGE once per
+// presented frame (refreshScreen, gte.cpp), so sub-frame transients of
+// $2007 bit 1 never reach its screen. Ganymede's engine housekeeping
+// rewrites $2007 with the page bit cleared for ~4k CPU cycles mid-frame
+// every other frame; a live scanout mux paints the mid-composition page
+// as a horizontal band for that window (the M8 flicker / sprite pop-in).
+// Latching the page at active-video start hides such transients while
+// keeping the normal flip path timely (games flip right after the vsync
+// NMI, well inside vblank).
+logic vid_page;
+logic vblank_q;
+always_ff @(posedge clk_sys) begin
+    vblank_q <= vblank;
+    if (reset)                   vid_page <= 1'b0;
+    else if (vblank_q && !vblank) vid_page <= dma_ctl[1];
+end
 
 logic vsync_nmi /*verilator public_flat_rd*/;
 

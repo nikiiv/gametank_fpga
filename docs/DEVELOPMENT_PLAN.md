@@ -157,10 +157,75 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
   test also asserts the M6 tone through the M7 core. Bad Apple verified
   full-screen on the DE10 via a mid-run indexed load.
 
-## M8 — Compatibility & release
+## M8 — Compatibility (Ganymede) ✅ (completed 2026-07-08)
+
+Scoped in practice to the one real-world compatibility campaign this
+milestone produced: making Ganymede's Climb Race — the most demanding
+shipped title — play correctly on hardware. The broader release items
+(library sweep, OSD polish, analog video, MiSTer-devel submission) move
+to M9 below.
+
+- **Done:** Ganymede plays correctly on the DE10 (user-verified). The
+  campaign fixed, in order of discovery, each with a failing-first test:
+  blit-engine starvation freeze (`blit_contention`), emulator-matched
+  power-on bank 0, pad bit-7 constant, the flash-write command set
+  (`flash_persist`), the VIA register-file read shadow (`via_shadow`),
+  the 16 KB banked-cart cache (`cart_cache`), the per-frame VID_OUT_PAGE
+  latch (`vidpage_latch`), **the missing Rockwell/WDC bit instructions —
+  the root cause of the sprite bug** (Klaus extended gate now runs with
+  `rkwl_wdc_op = 1`, plus `cpu_bit_ops`/`cpu_zpx`), and GRAM CPU-write
+  backpressure (`gram_write_backpressure`, found by the parallel
+  `gametank_fix_sprites` investigation).
+- **Progress:** Ganymede sprite corruption root-caused and fixed — the blit
+  engine could lag its exact-duration IRQ under DDR contention (cart fetches
+  vs GRAM prefetch), and IRQ-chained sprite blits restarted the engine over
+  the previous blit's tail. Fixed by freezing the console clock-enable on
+  engine starvation (`blitter.starved`); repro test `blit_contention`
+  (IRQ-chained 4×16 sprites with banked-window execution) failed before,
+  passes after. See HARDWARE.md §FPGA memory budget (M8 amendment).
+- **Progress:** Ganymede flicker / sprite pop-in root-caused to three
+  emulator-floor deviations, each fixed with a failing-first test
+  (TESTING.md §emulator-floor lessons): VIA reads now come from a bare
+  register-file shadow like the emulator (`via_shadow`; the game seeds
+  its level generator from VIA sweeps), the banked cart window got a
+  16 KB direct-mapped cache so steady-state re-reads are stall-free like
+  real ROM (`cart_cache`; the 2-slot buffer stole ~7k clk/frame from the
+  compositor), and scanout latches VID_OUT_PAGE at active-video start
+  the way the emulator presents once per frame (`vidpage_latch`; the
+  game transiently clears the page bit mid-frame every other frame,
+  which a live mux painted as a flickering band of the mid-composition
+  page).
+- **Progress: Ganymede SOLVED — missing Rockwell/WDC 65C02 bit
+  instructions.** The game executes RMB/SMB/BBR/BBS ~1.5M times between
+  menu and race; the vendored CPU ran the x7/xF opcode columns as 1-byte
+  NOPs, derailing execution into the operand bytes — heroine drawn ~90px
+  off (visible only during slash/jump), flickering misplaced sprites.
+  Implemented in `rtl/cpu/cpu_65c02.v` (DEPENDENCIES.md §CPU mod 6); the
+  Klaus 65C02 extended import gate now runs with `rkwl_wdc_op = 1`,
+  exercising all 32 opcodes exhaustively. Post-fix, the sim scanout of
+  the Climb Race ready scene matches the emulator's composition
+  (heroine center-screen on grass, clean idle-animation deltas). The
+  earlier "different procedural level" observations were an artifact of
+  the derailed CPU execution, not real seed divergence.
+- **Progress (ported from the parallel `gametank_fix_sprites`
+  investigation, which independently converged on the same Rockwell-ops
+  root cause):** CPU GRAM-window **writes** now backpressure like reads —
+  the single pending-write slot could be silently overwritten during an
+  HPS DDR busy stretch, dropping bytes from tight sprite-sheet uploads
+  (plain `STA abs` streams carry no dummy read to throttle them; 127 of
+  128 bytes lost in the repro). `rtl/gram_ddr.sv` stalls the CPU
+  clock-enable on a pending write (with an idle fast path) and gains an
+  8-word read cache for interleaved sprite-table scans. Tests:
+  `gram_write_backpressure` (strengthened to an unrolled `LDA #/STA abs`
+  stream — the `STA abs,X` version self-throttled via its dummy read and
+  missed the bug), plus directed CPU tests `cpu_bit_ops` and `cpu_zpx`.
+
+## M9 — Library sweep & release
 
 - Run the known game library + SDK samples through the system suite
-  (N-thousand-frame scripted runs, screenshot-hash checkpoints); fix divergences
+  (N-thousand-frame scripted runs, screenshot-hash checkpoints); fix
+  divergences — the M8 opcode/write-path fixes may change behavior in
+  other titles too
 - OSD polish (config string, reset, aspect options), analog video verified
 - Docs finalized; release `.rbf` + submission prep for MiSTer-devel
 - **Done when:** library passes; manual on-hardware checklist signed off.

@@ -1,8 +1,8 @@
 diff --git a/src/gte.cpp b/src/gte.cpp
-index 1061b46..c6719bb 100644
+index 1061b46..1ba64dd 100644
 --- a/src/gte.cpp
 +++ b/src/gte.cpp
-@@ -517,6 +517,20 @@ void MemoryWrite(uint16_t address, uint8_t value) {
+@@ -517,12 +517,55 @@ void MemoryWrite(uint16_t address, uint8_t value) {
  
  SDL_Event e;
  bool running = true;
@@ -11,7 +11,28 @@ index 1061b46..c6719bb 100644
 +static FILE* lockstep_file = NULL;
 +static long  lockstep_frames = 0;
 +static long  lockstep_count = 0;
++// scripted input: GTE_LOCKSTEP_INPUT="flip:p1mask,flip:p1mask,..." (hex
++// masks in GamepadButtonMask layout); applied when the flip counter
++// reaches each entry, so both lockstep sides see identical stimulus.
++#include <vector>
++struct LockstepInput { long flip; unsigned mask; };
++static std::vector<LockstepInput> lockstep_inputs;
++static size_t lockstep_input_pos = 0;
++static FILE* lockstep_ram = NULL;
 +static void lockstep_init() {
++	const char* rs = getenv("GTE_DUMP_RAM_STREAM");
++	if(rs) lockstep_ram = fopen(rs, "wb");
++	const char* inp = getenv("GTE_LOCKSTEP_INPUT");
++	if(inp) {
++		const char* s = inp;
++		while(*s) {
++			long f = strtol(s, (char**)&s, 10);
++			if(*s == ':') s++;
++			unsigned m = (unsigned)strtoul(s, (char**)&s, 16);
++			lockstep_inputs.push_back({f, m});
++			if(*s == ',') s++;
++		}
++	}
 +	const char* out = getenv("GTE_LOCKSTEP_OUT");
 +	if(!out) return;
 +	lockstep_file = fopen(out, "wb");
@@ -23,18 +44,65 @@ index 1061b46..c6719bb 100644
  bool gofast = false;
  bool paused = true;
  bool lshift = false;
-@@ -1148,6 +1162,18 @@ EM_BOOL mainloop(double time, void* userdata) {
+ bool rshift = false;
+ 
++//--- gametank_fpga lockstep patch: deterministic power-on ---
++static bool zero_poweron() { return getenv("GTE_ZERO_POWERON") != NULL; }
++//-------------------------------------------------------------
+ void randomize_vram() {
++	if(zero_poweron()) {
++		memset(system_state.vram, 0, VRAM_BUFFER_SIZE);
++		memset(system_state.gram, 0, GRAM_BUFFER_SIZE);
++		return;
++	}
+ 	for(int i = 0; i < VRAM_BUFFER_SIZE; i ++) {
+ 		system_state.vram[i] = rand() % 256;
+ 		put_pixel32(vRAM_Surface, i & 127, i >> 7, Palette::ConvertColor(vRAM_Surface, system_state.vram[i]));
+@@ -534,6 +577,17 @@ void randomize_vram() {
+ }
+ 
+ void randomize_memory() {
++	if(zero_poweron()) {
++		memset(system_state.ram, 0, RAMSIZE);
++		memset(system_state.vram, 0, VRAM_BUFFER_SIZE);
++		memset(system_state.gram, 0, GRAM_BUFFER_SIZE);
++		for(int i = 0; i < RAMSIZE; i++) system_state.ram_initialized[i] = false;
++		system_state.dma_control = 0;
++		system_state.dma_control_irq = false;
++		system_state.banking = 0;
++		blitter->gram_mid_bits = 0;
++		return;
++	}
+ 	for(int i = 0; i < RAMSIZE; i++) {
+ 		system_state.ram[i] = rand() % 256;
+ 		system_state.ram_initialized[i] = false;
+@@ -1148,6 +1202,33 @@ EM_BOOL mainloop(double time, void* userdata) {
  					profiler.last_blitter_activity = blitter->pixels_this_frame;
  					blitter->pixels_this_frame = 0;
  				}
 +				//--- gametank_fpga lockstep patch: dump displayed page ---
++				while(lockstep_input_pos < lockstep_inputs.size() &&
++				      lockstep_inputs[lockstep_input_pos].flip <= lockstep_count) {
++					joysticks->injectPads(
++						(uint16_t)lockstep_inputs[lockstep_input_pos].mask, 0);
++					lockstep_input_pos++;
++				}
++				if(lockstep_ram)
++					fwrite(system_state.ram, 1, 0x8000, lockstep_ram);
 +				if(lockstep_file) {
 +					fwrite(system_state.vram +
 +						((system_state.dma_control & DMA_VID_OUT_PAGE_BIT) ? 0x4000 : 0),
 +						1, 0x4000, lockstep_file);
 +					if(++lockstep_count >= lockstep_frames) {
++						const char* gd = getenv("GTE_DUMP_GRAM");
++						if(gd) {
++							FILE* gf = fopen(gd, "wb");
++							fwrite(system_state.gram, 1, GRAM_BUFFER_SIZE, gf);
++							fclose(gf);
++						}
 +						fclose(lockstep_file);
 +						lockstep_file = NULL;
++						if(lockstep_ram) { fclose(lockstep_ram); lockstep_ram = NULL; }
 +						running = false;
 +					}
 +				}
@@ -42,7 +110,7 @@ index 1061b46..c6719bb 100644
  			}
  		} else {
  				SDL_Delay(16);
-@@ -1320,6 +1346,7 @@ EM_BOOL mainloop(double time, void* userdata) {
+@@ -1320,6 +1401,7 @@ EM_BOOL mainloop(double time, void* userdata) {
  }
  
  int main(int argC, char* argV[]) {
@@ -50,3 +118,17 @@ index 1061b46..c6719bb 100644
  	srand(time(NULL));
  	cartridge_state.rom = new uint8_t[1 << 21];
  
+diff --git a/src/joystick_adapter.h b/src/joystick_adapter.h
+index 4766264..c210a4a 100644
+--- a/src/joystick_adapter.h
++++ b/src/joystick_adapter.h
+@@ -66,6 +66,9 @@ private:
+ 	SDL_GameController* gGameController = NULL;
+ 	SDL_JoystickID gGameControllerId = 0;
+ public:
++	//--- gametank_fpga lockstep patch: scripted input injection ---
++	void injectPads(uint16_t p1, uint16_t p2) { pad1Mask = p1; pad2Mask = p2; }
++	//---------------------------------------------------------------
+ 	JoystickAdapter();
+ 	~JoystickAdapter();
+ 	uint8_t read(uint8_t portNum, bool stateful);

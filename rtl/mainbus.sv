@@ -29,6 +29,8 @@ module mainbus
 
     output logic [14:0] cart_addr,   // $8000-$FFFF window (strobe-latched)
     output logic        cart_rd,     // 1-clk pulse: read latched this strobe
+    output logic        cart_wr,     // 1-clk pulse: write latched this strobe
+    output logic [7:0]  cart_wdata,  // write data (latched with cart_addr)
     input  logic [7:0]  cart_data,   // must be valid within the 8-clk window
 
     // VDMA window ($4000-$7FFF): shared strobe-latched address/data with
@@ -69,9 +71,10 @@ module mainbus
     input  logic        nmi          // vsync NMI (from scanout, gated dma_ctl[2])
 );
 
-wire [15:0] cpu_ab;
+wire [15:0] cpu_ab /*verilator public_flat_rd*/;
+wire        cpu_sync /*verilator public_flat_rd*/;
 wire  [7:0] cpu_do;
-logic [7:0] cpu_di;
+logic [7:0] cpu_di /*verilator public_flat_rd*/;
 wire        cpu_we;
 
 /* verilator lint_off PINCONNECTEMPTY */
@@ -86,7 +89,7 @@ cpu_65c02 cpu
     .IRQ   (irq),
     .NMI   (nmi),
     .RDY   (cpu_ce),
-    .SYNC  ()
+    .SYNC  (cpu_sync)
 );
 /* verilator lint_on PINCONNECTEMPTY */
 
@@ -161,6 +164,8 @@ always_ff @(posedge clk_sys) begin
     acp_rate_we  <= cpu_ce && reg_write && cpu_ab[2:0] == 3'd6;
     aram_we      <= cpu_ce && aram_sel && cpu_we;
     cart_rd      <= cpu_ce && cpu_ab[15] && !cpu_we;
+    cart_wr      <= cpu_ce && cpu_ab[15] && cpu_we;
+    if (cpu_ce) cart_wdata <= cpu_do;
 end
 
 // Read-source select, latched at the strobe alongside the address so the
@@ -168,8 +173,8 @@ end
 // vector/jump-target cycles).
 typedef enum logic [3:0] { SEL_RAM, SEL_CART, SEL_VRAM, SEL_GRAM,
                            SEL_PAD, SEL_VIA, SEL_ARAM, SEL_OPEN } rdsel_e;
-rdsel_e     rd_sel;
-logic [7:0] open_bus;
+rdsel_e     rd_sel /*verilator public_flat_rd*/;
+logic [7:0] open_bus /*verilator public_flat_rd*/;
 
 always_ff @(posedge clk_sys) begin
     if (cpu_ce) begin

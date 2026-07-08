@@ -43,13 +43,29 @@ demand, never vendored. Audited 2026-07-06.
      constantly (sample-rate IRQs + main-CPU NMI commands). The sequence now
      records at BRK2 whether it took the NMI vector and only then consumes
      the edge (`NMI_taking`, marked "GameTank mod").
-  6. Rockwell `BBR/BBS/SMB/RMB`: **not implemented** (no GameTank software
-     uses them; they run as correct-length NOPs via `IMPLEMENT_NOPS`).
-     Post-1.0 fidelity item.
+  6. **Rockwell/WDC bit instructions `RMB/SMB/BBR/BBS` implemented (M8):**
+     the earlier "no GameTank software uses them" assumption was falsified
+     by Ganymede, which executes them ~1.5M times between menu and race
+     (hot code copied to RAM `$0200-$0340`); worse, `IMPLEMENT_NOPS` ran
+     the whole x7/xF columns as **1-byte** NOPs, so execution derailed
+     into the instruction operands (the M8 "sprites in wrong positions"
+     bug — the W65C02S and the emulator both implement these). RMB/SMB
+     ($x7) ride the existing zero-page read-modify-write path (`ZP0 →
+     READ → WRITE`) with a decoded one-hot mask operand into the ALU
+     (`rsb_ins`, `rsb_mask`; AND/~mask for RMB, OR/mask for SMB; no flag
+     updates, W65C02S-correct 5 cycles). BBR/BBS ($xF) add states `BBR0`
+     (issue zp address) and `BBR1` (latch the tested bit from the read
+     data, consume the rel byte) and then reuse the stock branch datapath
+     (`BRA0/BRA1/BRA2`) with the latched bit as the condition (`bbx_ins`,
+     `bbx_cond`; 5 cycles + 1 taken + 1 page-cross, W65C02S-correct).
+     Opcode fields are latched at DECODE (`bit_sel`, `bit_set`) — `IR` is
+     only the opcode during DECODE in this core. All marked
+     "GameTank mod".
 - **Import gate (sim/, runs in CI):** Klaus `6502_functional_test.bin` stock
   (success `$3469`, ~96.2M cycles) + 65C02 extended test reassembled from the
   amb5l CA65 port @ `966b1a35049f9d8be44ad092ec6d43d5ba1831b3` with
-  `rkwl_wdc_op = 0` (success label planted at build time, ~66.8M cycles).
+  `rkwl_wdc_op = 1` (Rockwell bit ops exercised exhaustively — M8; success
+  label planted at build time, ~66.8M cycles).
   Note: `wdc_op = 1` only makes the extended test *skip* $CB/$DB (Klaus
   covers WAI/STP in the separate interrupt test, which has no CA65 port) —
   actual WAI/STP semantics are covered by our directed test

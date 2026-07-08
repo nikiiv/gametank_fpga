@@ -44,6 +44,14 @@ module blitter
     output logic [18:0] gram_paddr,
     output logic        gram_want,
     input  logic        gram_ready,
+
+    // The engine is starved: the byte the next step needs isn't fetched
+    // yet. The core top freezes the console clock-enable on this, so the
+    // exact-duration IRQ counter and the pixel engine can never diverge —
+    // otherwise an IRQ handler triggering the next blit (the SDK pattern)
+    // restarts the engine while it still drains the previous blit's tail
+    // (the M8 Ganymede sprite bug; repro: blit_contention).
+    output logic        starved,
     output logic [18:0] gram_addr,
     input  logic [7:0]  gram_q,
 
@@ -57,11 +65,14 @@ module blitter
 );
 
 // Parameter registers (survive blits; only counters change during a copy)
-logic [7:0] pVX, pVY, pGX, pGY, pW, pH, pCOLOR;
+logic [7:0] pVX /*verilator public_flat_rd*/, pVY /*verilator public_flat_rd*/,
+            pGX /*verilator public_flat_rd*/, pGY /*verilator public_flat_rd*/,
+            pW  /*verilator public_flat_rd*/, pH  /*verilator public_flat_rd*/,
+            pCOLOR /*verilator public_flat_rd*/;
 
 // Engine state
 logic [7:0] cVX, cVY, cGX, cGY, cW, cH;
-logic       trigger, init, running;
+logic       trigger /*verilator public_flat_rd*/, init, running;
 
 // Exact-duration IRQ
 logic        pending;
@@ -126,6 +137,7 @@ assign gram_paddr = {banking[2:0], gy_eff[7], gx_eff[7],
 assign gram_want  = running2 && !dma_ctl[3];   // colorfill reads nothing
 
 wire engine_step = cpu_ce && (!gram_want || gram_ready);
+assign starved = gram_want && !gram_ready;
 
 // ---- registers ------------------------------------------------------------
 // Pixel-op pipeline: values captured at the strobe, used over the window

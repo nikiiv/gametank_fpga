@@ -34,9 +34,16 @@ module pads
 
 logic sel1, sel2;
 
+// D7: the schematic reads as the latched select state (0 on phase-low
+// reads), but the emulator — the compatibility floor — returns constant 1,
+// and shipped games store raw pad bytes and compare them against $FF
+// (Ganymede keeps one at $1308: with D7=0 its input state machine forks
+// and the Climb Race ready-scene draws wrong — found by RAM-stream
+// lockstep diff, M8). Bit 7 is therefore constant 1 to match the
+// emulator; the select FF still sequences the phases.
 function automatic logic [7:0] padByte(input logic sel, input logic [7:0] joy);
     return sel ? {1'b1, 1'b1, ~joy[6], ~joy[5], ~joy[3], ~joy[2], ~joy[1], ~joy[0]}
-               : {1'b0, 1'b1, ~joy[7], ~joy[4], ~joy[3], ~joy[2], 1'b1,    1'b1};
+               : {1'b1, 1'b1, ~joy[7], ~joy[4], ~joy[3], ~joy[2], 1'b1,    1'b1};
 endfunction
 
 always_ff @(posedge clk_sys) begin

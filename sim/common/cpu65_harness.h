@@ -29,7 +29,21 @@ public:
     int      sameSyncCount = 0;
     uint16_t syncPC        = 0xFFFF;  // most recent opcode fetch address
 
-    Cpu65() { std::memset(mem, 0xFF, sizeof mem); }
+    // GT_RDY_GAPS=1: deassert RDY for random stretches (1-30 cycles) at
+    // random points — models the core's stall behavior (cart misses, GRAM
+    // waits, blit starvation freeze cpu_ce at arbitrary instruction
+    // boundaries). The vendored CPU was only ever conformance-tested at a
+    // constant cadence; a subtle RDY-handling bug corrupts game state
+    // rarely and timing-dependently.
+    bool     rdyGaps = false;
+    int      gapLeft = 0;
+    uint32_t rng     = 0x1B0B5EEDu;
+    uint32_t rnd() { rng ^= rng << 13; rng ^= rng >> 17; rng ^= rng << 5; return rng; }
+
+    Cpu65() {
+        std::memset(mem, 0xFF, sizeof mem);
+        rdyGaps = std::getenv("GT_RDY_GAPS") != nullptr;
+    }
 
     void loadImage(const std::string& path, uint16_t base) {
         FILE* f = std::fopen(path.c_str(), "rb");
@@ -56,8 +70,22 @@ public:
     // posedge see the previous DI (nonblocking `DI <= mem[AB]` semantics).
     // Read-during-write returns old data, like inferred BRAM.
     void tick() {
+        if (rdyGaps) {
+            if (gapLeft > 0) { gapLeft--; top.RDY = 0; }
+            else {
+                top.RDY = 1;
+                if (rnd() % 5 == 0) gapLeft = 1 + (rnd() % 30);
+            }
+        }
         top.clk = 1;
         top.eval();        // posedge: CPU registers see last cycle's DI
+
+        if (!top.RDY) {    // stalled: hold DI, bus does not progress
+            top.clk = 0;
+            top.eval();
+            cycles++;
+            return;
+        }
 
         top.DI = nextDI;   // new data becomes visible after the edge
         top.eval();        // settle combinational AB/WE/DO for this cycle

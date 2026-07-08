@@ -11,8 +11,14 @@
 //     cannot observe this — the $4000 window reads open bus while
 //     COPY_ENABLE=1, so mid-blit VRAM is unreadable. The engine stalls
 //     (blit_ready=0) on buffer misses and self-heals via a direct fetch.
-//   - CPU window reads of GRAM stretch the CPU clock-enable (cpu_stall)
-//     until DDR3 data lands; writes are posted.
+//   - CPU window accesses to GRAM stretch the CPU clock-enable (cpu_stall)
+//     only on unavoidable DDR waits. Reads use a tiny eight-word cache
+//     so interleaved sprite-table scans pay at most one DDR miss per
+//     active 8-byte stream.
+//     Writes wait until the DDR3 command is accepted; the real board writes
+//     SRAM in-cycle, but the FPGA must backpressure here or tight
+//     spritesheet uploads can overrun the single pending write slot under
+//     HPS DDR busy periods.
 //
 //  Prefetch: a blit's whole GRAM access set is deterministic at TRIGGER
 //  (params + mode bits). The prefetcher replicates the engine's per-row GY
@@ -164,10 +170,35 @@ logic        cpuw_pend, cpur_pend;
 logic [18:0] cpu_addr_l;
 logic [7:0]  cpu_wdata_l;
 logic [2:0]  cpu_lane;
+logic [7:0]  cpu_cache_v;
+logic [15:0] cpu_cache_word [0:7];
+logic [63:0] cpu_cache_data [0:7];
+logic [2:0]  cpu_cache_hit_idx;
+logic [2:0]  cpu_cache_alloc;
+logic [2:0]  cpu_cache_rr;
+logic        cpu_cache_hit /*verilator public_flat_rd*/;
 
-assign cpu_stall = cpur_pend;
+assign cpu_stall = cpur_pend || cpuw_pend;
+wire cpuw_fast = cpu_we && st == IDLE && !ddr_busy && !cpuw_pend && !cpur_pend;
 
 wire [7:0] row_eff = ydir_l ? ~next_gy : next_gy;
+
+always_comb begin
+    cpu_cache_hit = 1'b0;
+    cpu_cache_hit_idx = 3'd0;
+    for (int i = 0; i < 8; i++) begin
+        if (cpu_cache_v[i] && cpu_cache_word[i] == cpu_addr[18:3]) begin
+            cpu_cache_hit = 1'b1;
+            cpu_cache_hit_idx = 3'(i);
+        end
+    end
+
+    cpu_cache_alloc = cpu_cache_rr;
+    for (int i = 0; i < 8; i++) begin
+        if (!cpu_cache_v[i])
+            cpu_cache_alloc = 3'(i);
+    end
+end
 
 // Miss redirect: engine waiting on a row neither slot holds nor is filling
 wire miss_redirect = blit_want && !dma_ctl[3] && !hit0 && !hit1 &&
@@ -186,18 +217,29 @@ always_ff @(posedge clk_sys) begin
         rows_left <= '0;
         cpuw_pend <= 1'b0;
         cpur_pend <= 1'b0;
+        cpu_cache_v <= '0;
+        cpu_cache_rr <= '0;
     end
     else begin
         // latch CPU channel requests (mutually exclusive with blitter use
         // of the window, but they may arrive while a prefetch burst runs)
         if (cpu_we) begin
-            cpuw_pend   <= 1'b1;
-            cpu_addr_l  <= cpu_addr;
-            cpu_wdata_l <= cpu_wdata;
+            if (!cpuw_fast) begin
+                cpuw_pend   <= 1'b1;
+                cpu_addr_l  <= cpu_addr;
+                cpu_wdata_l <= cpu_wdata;
+            end
+            if (cpu_cache_hit)
+                cpu_cache_data[cpu_cache_hit_idx][cpu_addr[2:0]*8 +: 8] <=
+                    cpu_wdata;
         end
         if (cpu_rd) begin
-            cpur_pend  <= 1'b1;
-            cpu_addr_l <= cpu_addr;
+            if (cpu_cache_hit)
+                cpu_q <= cpu_cache_data[cpu_cache_hit_idx][cpu_addr[2:0]*8 +: 8];
+            else begin
+                cpur_pend  <= 1'b1;
+                cpu_addr_l <= cpu_addr;
+            end
         end
 
         if (blit_want) begin
@@ -221,7 +263,15 @@ always_ff @(posedge clk_sys) begin
 
         unique case (st)
             IDLE: begin
-                if (cpuw_pend) begin
+                if (cpuw_fast) begin
+                    ddr_we       <= 1'b1;
+                    ddr_addr     <= GRAM_BASE_W | {13'd0, cpu_addr[18:3]};
+                    ddr_din      <= {8{cpu_wdata}};
+                    ddr_be       <= 8'h01 << cpu_addr[2:0];
+                    ddr_burstcnt <= 8'd1;
+                    st           <= CPUW;
+                end
+                else if (cpuw_pend) begin
                     ddr_we       <= 1'b1;
                     ddr_addr     <= GRAM_BASE_W | {13'd0, cpu_addr_l[18:3]};
                     ddr_din      <= {8{cpu_wdata_l}};
@@ -299,7 +349,8 @@ always_ff @(posedge clk_sys) begin
             CPUW: begin
                 if (!ddr_busy) begin
                     ddr_we    <= 1'b0;
-                    cpuw_pend <= 1'b0;
+                    if (!cpu_we)
+                        cpuw_pend <= 1'b0;
                     st        <= IDLE;
                 end
             end
@@ -313,9 +364,13 @@ always_ff @(posedge clk_sys) begin
 
             CPUR_WAIT: begin
                 if (ddr_dout_ready) begin
-                    cpu_q      <= ddr_dout[cpu_lane*8 +: 8];
-                    cpur_pend  <= 1'b0;
-                    st         <= IDLE;
+                    cpu_q                         <= ddr_dout[cpu_lane*8 +: 8];
+                    cpu_cache_v[cpu_cache_alloc]  <= 1'b1;
+                    cpu_cache_word[cpu_cache_alloc] <= cpu_addr_l[18:3];
+                    cpu_cache_data[cpu_cache_alloc] <= ddr_dout;
+                    cpu_cache_rr                  <= cpu_cache_alloc + 3'd1;
+                    cpur_pend                     <= 1'b0;
+                    st                            <= IDLE;
                 end
             end
 
