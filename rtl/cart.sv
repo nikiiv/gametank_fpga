@@ -49,6 +49,8 @@ module cart
     // console window (strobe-latched by mainbus)
     input  logic [14:0] cart_addr,
     input  logic        cart_rd,        // 1-clk pulse after the CPU strobe
+    input  logic        cart_wr,        // 1-clk pulse: flash command write
+    input  logic [7:0]  cart_wdata,
     output logic [7:0]  cart_data,      // valid by the next strobe
     output logic        cart_stall,     // freeze cpu_ce while a miss is out
     output logic        cart_present,
@@ -93,7 +95,7 @@ logic [7:0] bank_mask /*verilator public_flat_rd*/;
 
 // only PA0 (clock), PA1 (data), PA2 (latch) matter; bank_mask[7] is the
 // RAM32K save-RAM select, forced high in M7 (no RAM32K support)
-wire _unused = &{1'b0, pa_q[7:3], bank_mask[7], fill_off[2:0]};
+wire _unused = &{1'b0, pa_q[7:3], bank_mask[7], fill_off[2:0], er_end[2:0]};
 
 always_ff @(posedge clk_sys) begin
     pa_q <= via_pa;
@@ -188,14 +190,43 @@ logic [7:0]  bank_q;
 logic        miss_pend /*verilator public_flat_rd*/;   // demand fetch outstanding
 logic [18:0] miss_word;
 
-assign cart_stall = miss_pend;
+// a new flash write while the previous op is still running stalls the CPU
+assign cart_stall = miss_pend || (fw_pend && (fw_busy || st != IDLE));
 assign cart_data  = serve_fixed ? fixed_qw[fx_lane*8 +: 8] : bank_q;
+
+// ---------------------------------------------------------------------------
+// Flash-write emulation (FLASH2M carts, emulator-faithful — gte.cpp
+// MemoryWrite: commands decoded by VALUE on any window write, unlock
+// writes are no-ops, program is a one-shot AND after $A0, $30 sector
+// erase per the chip's sector table, $10 chip erase, $90 = the save-to-
+// disk trigger, a no-op here; saves are session-volatile per
+// REQUIREMENTS.md — SD persistence stays post-1.0). Pulled forward from
+// post-1.0 because games probe/write their save area at boot and the
+// resulting state must match the emulator (Ganymede, M8).
+// ---------------------------------------------------------------------------
+logic       flash_wrmode = 1'b0;   // $A0 armed
+logic       fw_pend = 1'b0;        // one latched window write
+logic [14:0] fw_addr;
+logic [7:0]  fw_data;
+logic        fw_busy = 1'b0;       // program/erase op in flight
+logic        fw_isprog;            // 1 = AND-program, 0 = erase run
+logic [20:0] fw_off;               // program target / erase cursor
+logic [20:0] er_end;               // erase end (exclusive)
+logic [7:0]  fw_merge;
+
+// image offset of a window write (fixed region for $C000+)
+wire [20:0] fw_img = fw_addr[14] ? {7'h7F, fw_addr[13:0]}
+                                 : img_off(ctype, bank_mask[6:0], eep_mask,
+                                           fw_addr[13:0]);
+// sector decode per the emulator: {bank[6:0], addr13}
+wire [7:0] sec_bits = {bank_mask[6:0], fw_addr[13]};
 
 // ---------------------------------------------------------------------------
 // DDR machine: download writes, fixed-bank fill (16-word bursts), demand
 // fetches and prefetches (1-word bursts). Runs through console reset.
 // ---------------------------------------------------------------------------
-typedef enum logic [2:0] { IDLE, DLW, FILL_CMD, FILL_DATA, FETCH }
+typedef enum logic [3:0] { IDLE, DLW, FILL_CMD, FILL_DATA, FETCH,
+                           PRG_RD, PRG_WR, ER_WR, FIXPATCH_RD }
     dstate_t;
 
 wire [20:0] fill_off = fill_src(ctype, eep_mask, fill_idx);   // Quartus 17 can't
@@ -208,10 +239,26 @@ logic [3:0]  beat_cnt;
 logic        fetch_beat1;              // second beat of the 2-word fetch
 
 always_ff @(posedge clk_sys) begin
-    // ---- fixed-bank BRAM (write port shared with the fill burst) ---------
+    // ---- fixed-bank BRAM (write port shared with the fill burst, flash
+    //      erase runs, and program patches) ----------------------------------
     if (st == FILL_DATA && ddr_dout_ready)
         fixedram[{fill_idx[13:7], beat_cnt}] <= ddr_dout;
+    else if (st == ER_WR && !ddr_busy && fw_off >= 21'h1FC000)
+        fixedram[fw_off[13:3]] <= 64'hFFFF_FFFF_FFFF_FFFF;
+    else if (st == FIXPATCH_RD && ddr_dout_ready)
+        fixedram[fw_off[13:3]] <= ddr_dout;
     fixed_qw <= fixedram[fx_word];
+
+    // ---- flash write intake (reset-sensitive) ----------------------------
+    if (reset) begin
+        flash_wrmode <= 1'b0;
+        fw_pend      <= 1'b0;
+    end
+    else if (cart_wr && present_r && ctype == T_FLASH2M && !fw_pend) begin
+        fw_pend <= 1'b1;
+        fw_addr <= cart_addr;
+        fw_data <= cart_wdata;
+    end
 
     // ---- console-side request latching (reset-sensitive) -----------------
     if (reset) begin
@@ -264,7 +311,61 @@ always_ff @(posedge clk_sys) begin
     // ---- DDR machine ------------------------------------------------------
     unique case (st)
         IDLE: begin
-            if (dlw_pend) begin
+            if (fw_pend && !fw_busy) begin
+                // decode one latched flash write (emulator semantics)
+                fw_pend <= 1'b0;
+                if (flash_wrmode) begin
+                    flash_wrmode <= 1'b0;
+                    fw_busy      <= 1'b1;
+                    fw_isprog    <= 1'b1;
+                    fw_off       <= fw_img;
+                    buf_v        <= 2'b00;          // stale word buffers
+                    ddr_rd       <= 1'b1;           // fetch word for the AND
+                    ddr_addr     <= CART_BASE_W + {10'd0, fw_img[20:3]};
+                    ddr_be       <= 8'hFF;
+                    ddr_burstcnt <= 8'd1;
+                    st           <= PRG_RD;
+                end
+                else if (fw_data == 8'hA0)
+                    flash_wrmode <= 1'b1;
+                else if (fw_data == 8'h30 || fw_data == 8'h10) begin
+                    fw_busy   <= 1'b1;
+                    fw_isprog <= 1'b0;
+                    buf_v     <= 2'b00;
+                    if (fw_data == 8'h10) begin     // chip erase
+                        fw_off <= 21'h000000;
+                        er_end <= 21'h1FFFFF;
+                    end
+                    else if (sec_bits[7:3] < 5'd31) begin
+                        fw_off <= {sec_bits[7:3], 16'h0000};
+                        er_end <= {sec_bits[7:3], 16'hFFFF};
+                    end
+                    else if (!sec_bits[2]) begin
+                        fw_off <= 21'h1F0000; er_end <= 21'h1F7FFF;
+                    end
+                    else if (sec_bits == 8'hFC) begin
+                        fw_off <= 21'h1F8000; er_end <= 21'h1F9FFF;
+                    end
+                    else if (sec_bits == 8'hFD) begin
+                        fw_off <= 21'h1FA000; er_end <= 21'h1FBFFF;
+                    end
+                    else begin                      // FE/FF: fixed 16 KB
+                        fw_off <= 21'h1FC000; er_end <= 21'h1FDFFF;
+                    end
+                end
+                // $90 (save trigger) and unlock bytes: no-ops
+            end
+            else if (fw_busy && !fw_isprog) begin
+                // one erase word per dispatch — reads/fetches interleave,
+                // so the SDK's toggle-polling sees the erase progressing
+                ddr_we       <= 1'b1;
+                ddr_addr     <= CART_BASE_W + {10'd0, fw_off[20:3]};
+                ddr_din      <= 64'hFFFF_FFFF_FFFF_FFFF;
+                ddr_be       <= 8'hFF;
+                ddr_burstcnt <= 8'd1;
+                st           <= ER_WR;
+            end
+            else if (dlw_pend) begin
                 ddr_we       <= 1'b1;
                 ddr_addr     <= CART_BASE_W + {11'd0, dlw_addr[20:3]};
                 ddr_din      <= {8{dlw_data}};
@@ -316,6 +417,55 @@ always_ff @(posedge clk_sys) begin
                         st       <= FILL_CMD;
                     end
                 end
+            end
+        end
+
+        PRG_RD: begin
+            if (!ddr_busy) ddr_rd <= 1'b0;
+            if (ddr_dout_ready) begin
+                fw_merge <= ddr_dout[fw_off[2:0]*8 +: 8] & fw_data;
+                st       <= PRG_WR;
+            end
+        end
+
+        PRG_WR: begin
+            if (!ddr_we) begin
+                ddr_we       <= 1'b1;
+                ddr_addr     <= CART_BASE_W + {10'd0, fw_off[20:3]};
+                ddr_din      <= {8{fw_merge}};
+                ddr_be       <= 8'h01 << fw_off[2:0];
+                ddr_burstcnt <= 8'd1;
+            end
+            else if (!ddr_busy) begin
+                ddr_we <= 1'b0;
+                if (fw_off >= 21'h1FC000) begin     // keep fixedram in sync
+                    ddr_rd       <= 1'b1;
+                    ddr_addr     <= CART_BASE_W + {10'd0, fw_off[20:3]};
+                    ddr_be       <= 8'hFF;
+                    ddr_burstcnt <= 8'd1;
+                    st           <= FIXPATCH_RD;
+                end
+                else begin
+                    fw_busy <= 1'b0;
+                    st      <= IDLE;
+                end
+            end
+        end
+
+        FIXPATCH_RD: begin
+            if (!ddr_busy) ddr_rd <= 1'b0;
+            if (ddr_dout_ready) begin
+                fw_busy <= 1'b0;
+                st      <= IDLE;
+            end
+        end
+
+        ER_WR: begin
+            if (!ddr_busy) begin
+                ddr_we <= 1'b0;
+                if (fw_off[20:3] == er_end[20:3]) fw_busy <= 1'b0;
+                else fw_off <= fw_off + 21'd8;
+                st <= IDLE;
             end
         end
 

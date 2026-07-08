@@ -1,8 +1,8 @@
 diff --git a/src/gte.cpp b/src/gte.cpp
-index 1061b46..9308b3f 100644
+index 1061b46..1ba64dd 100644
 --- a/src/gte.cpp
 +++ b/src/gte.cpp
-@@ -517,12 +517,52 @@ void MemoryWrite(uint16_t address, uint8_t value) {
+@@ -517,12 +517,55 @@ void MemoryWrite(uint16_t address, uint8_t value) {
  
  SDL_Event e;
  bool running = true;
@@ -18,7 +18,10 @@ index 1061b46..9308b3f 100644
 +struct LockstepInput { long flip; unsigned mask; };
 +static std::vector<LockstepInput> lockstep_inputs;
 +static size_t lockstep_input_pos = 0;
++static FILE* lockstep_ram = NULL;
 +static void lockstep_init() {
++	const char* rs = getenv("GTE_DUMP_RAM_STREAM");
++	if(rs) lockstep_ram = fopen(rs, "wb");
 +	const char* inp = getenv("GTE_LOCKSTEP_INPUT");
 +	if(inp) {
 +		const char* s = inp;
@@ -55,7 +58,7 @@ index 1061b46..9308b3f 100644
  	for(int i = 0; i < VRAM_BUFFER_SIZE; i ++) {
  		system_state.vram[i] = rand() % 256;
  		put_pixel32(vRAM_Surface, i & 127, i >> 7, Palette::ConvertColor(vRAM_Surface, system_state.vram[i]));
-@@ -534,6 +574,17 @@ void randomize_vram() {
+@@ -534,6 +577,17 @@ void randomize_vram() {
  }
  
  void randomize_memory() {
@@ -73,7 +76,7 @@ index 1061b46..9308b3f 100644
  	for(int i = 0; i < RAMSIZE; i++) {
  		system_state.ram[i] = rand() % 256;
  		system_state.ram_initialized[i] = false;
-@@ -1148,6 +1199,24 @@ EM_BOOL mainloop(double time, void* userdata) {
+@@ -1148,6 +1202,33 @@ EM_BOOL mainloop(double time, void* userdata) {
  					profiler.last_blitter_activity = blitter->pixels_this_frame;
  					blitter->pixels_this_frame = 0;
  				}
@@ -84,13 +87,22 @@ index 1061b46..9308b3f 100644
 +						(uint16_t)lockstep_inputs[lockstep_input_pos].mask, 0);
 +					lockstep_input_pos++;
 +				}
++				if(lockstep_ram)
++					fwrite(system_state.ram, 1, 0x8000, lockstep_ram);
 +				if(lockstep_file) {
 +					fwrite(system_state.vram +
 +						((system_state.dma_control & DMA_VID_OUT_PAGE_BIT) ? 0x4000 : 0),
 +						1, 0x4000, lockstep_file);
 +					if(++lockstep_count >= lockstep_frames) {
++						const char* gd = getenv("GTE_DUMP_GRAM");
++						if(gd) {
++							FILE* gf = fopen(gd, "wb");
++							fwrite(system_state.gram, 1, GRAM_BUFFER_SIZE, gf);
++							fclose(gf);
++						}
 +						fclose(lockstep_file);
 +						lockstep_file = NULL;
++						if(lockstep_ram) { fclose(lockstep_ram); lockstep_ram = NULL; }
 +						running = false;
 +					}
 +				}
@@ -98,7 +110,7 @@ index 1061b46..9308b3f 100644
  			}
  		} else {
  				SDL_Delay(16);
-@@ -1320,6 +1389,7 @@ EM_BOOL mainloop(double time, void* userdata) {
+@@ -1320,6 +1401,7 @@ EM_BOOL mainloop(double time, void* userdata) {
  }
  
  int main(int argC, char* argV[]) {

@@ -64,6 +64,9 @@ int main(int argc, char** argv) {
     sim.reset();
 
     FILE* ours = std::fopen("gany_ls_ours.bin", "wb");
+    FILE* ramf = std::getenv("GT_DUMP_RAM_STREAM")
+                     ? std::fopen(std::getenv("GT_DUMP_RAM_STREAM"), "wb")
+                     : nullptr;
     long flips = 0;
     int schedPos = 0, firstBad = -1, badN = 0;
     uint8_t prevPage = sim.dmaCtl() & 0x02;
@@ -85,6 +88,11 @@ int main(int argc, char** argv) {
         for (int i = 0; i < 16384; i++)
             fb[i] = sim.vramRead(p, (uint16_t)i);
         std::fwrite(fb.data(), 1, fb.size(), ours);
+        if (ramf) {
+            std::array<uint8_t, 0x8000> ram;
+            for (int i = 0; i < 0x8000; i++) ram[i] = sim.sysram((uint16_t)i);
+            std::fwrite(ram.data(), 1, ram.size(), ramf);
+        }
         if (std::memcmp(fb.data(), emu.data() + (size_t)flips * 16384,
                         16384) != 0) {
             if (firstBad < 0) firstBad = (int)flips;
@@ -93,6 +101,7 @@ int main(int argc, char** argv) {
         flips++;
     }
     std::fclose(ours);
+    if (ramf) std::fclose(ramf);
     std::printf("flips=%ld matched=%ld divergent=%d firstBad=%d\n",
                 flips, flips - badN, badN, firstBad);
     return badN ? 1 : 0;

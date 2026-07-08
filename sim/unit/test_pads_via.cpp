@@ -42,18 +42,19 @@ int main() {
 
     CHECK(sim.sysram(0x001F) == 0xC3, "done marker: %02x", sim.sysram(0x001F));
 
-    // pad1, A+Up: sel0 -> D7=0 D6=1 Start=1 A=0 Up=0 Down=1 D1=D0=1 = $67
-    //             sel1 -> D7=1 D6=1 C=1 B=1 Up=0 Down=1 Left=1 Right=1 = $F7
-    CHECK(sim.sysram(0x10) == 0x67, "pad1 read1 (sel0): %02x", sim.sysram(0x10));
+    // pad1, A+Up (D7 constant 1 to match the emulator — M8 pads decision):
+    //   sel0 -> D7=1 D6=1 Start=1 A=0 Up=0 Down=1 D1=D0=1 = $E7
+    //   sel1 -> D7=1 D6=1 C=1 B=1 Up=0 Down=1 Left=1 Right=1 = $F7
+    CHECK(sim.sysram(0x10) == 0xE7, "pad1 read1 (sel0): %02x", sim.sysram(0x10));
     CHECK(sim.sysram(0x11) == 0xF7, "pad1 read2 (sel1): %02x", sim.sysram(0x11));
-    CHECK(sim.sysram(0x12) == 0x67, "pad1 read3 (sel0 again): %02x", sim.sysram(0x12));
+    CHECK(sim.sysram(0x12) == 0xE7, "pad1 read3 (sel0 again): %02x", sim.sysram(0x12));
 
-    // pad2, Right+Start: sel0 -> Start=0 -> $5F; sel1 -> Right=0 -> $FE
-    CHECK(sim.sysram(0x13) == 0x5F, "pad2 read1 (sel0): %02x", sim.sysram(0x13));
+    // pad2, Right+Start: sel0 -> Start=0 -> $DF; sel1 -> Right=0 -> $FE
+    CHECK(sim.sysram(0x13) == 0xDF, "pad2 read1 (sel0): %02x", sim.sysram(0x13));
     CHECK(sim.sysram(0x14) == 0xFE, "pad2 read2 (sel1): %02x", sim.sysram(0x14));
 
     // pad2 was read since -> pad1's select FF was cross-reset to 0
-    CHECK(sim.sysram(0x15) == 0x67, "pad1 after cross-reset: %02x", sim.sysram(0x15));
+    CHECK(sim.sysram(0x15) == 0xE7, "pad1 after cross-reset: %02x", sim.sysram(0x15));
 
     // VIA register file
     CHECK(sim.sysram(0x16) == 0xA5, "VIA ORA readback: %02x", sim.sysram(0x16));

@@ -130,6 +130,8 @@ mainbus mainbus
 
     .cart_addr     (cart_addr),
     .cart_rd       (cart_rd),
+    .cart_wr       (cart_wr),
+    .cart_wdata    (cart_wdata),
     .cart_data     (cart_present ? cart_int_data : cart_data),
 
     .win_addr      (win_addr),
@@ -310,8 +312,9 @@ gram_ddr gram_ddr
 
 // Cartridge controller (M7): DDR3-backed .gtr with VIA Port A bank SPI.
 // Shares the DDRAM port with the GRAM prefetcher through ddr_mux.
-logic        cart_rd, cart_present;
-logic [7:0]  cart_int_data;
+logic        cart_rd, cart_wr, cart_present;
+logic [7:0]  cart_wdata;
+logic [7:0]  cart_int_data /*verilator public_flat_rd*/;
 logic        g_rd, g_we, g_dout_ready, g_busy;
 logic [28:0] g_addr;
 logic [63:0] g_din;
@@ -328,6 +331,8 @@ cart cart
 
     .cart_addr      (cart_addr),
     .cart_rd        (cart_rd),
+    .cart_wr        (cart_wr),
+    .cart_wdata     (cart_wdata),
     .cart_data      (cart_int_data),
     .cart_stall     (cart_stall),
     .cart_present   (cart_present),

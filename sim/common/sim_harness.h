@@ -102,6 +102,8 @@ public:
 
         if (top.ddr_rd && !busyNow && ddrJobs.size() < 4) {
             uint64_t lat = DDR_LAT + (hLat ? (ddrRand() % 40) : 0);
+            // occasional Linux-sized latency spikes
+            if (hLat && (ddrRand() % 50 == 0)) lat += 100 + (ddrRand() % 200);
             ddrJobs.push_back({cycles + lat, ddrOff(top.ddr_addr),
                                top.ddr_burstcnt, 0});
         }
