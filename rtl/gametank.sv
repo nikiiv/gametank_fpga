@@ -88,7 +88,7 @@ assign audio_r = {dac, 8'h00};
 
 // 3.579545 MHz clock-enable for the console (clk_sys / 8): the CPU's RDY
 // strobe. All bus transactions latch at this strobe (see mainbus.sv).
-// gram_stall/cart_stall freeze the cadence while a CPU read waits on DDR3;
+// gram_stall/cart_stall freeze the cadence while a CPU access waits on DDR3;
 // blit_starve freezes it while the blitter waits on a GRAM row so the
 // engine can never lag its exact-duration IRQ (documented deviations —
 // real hardware never stalls; the raster keeps real time throughout).

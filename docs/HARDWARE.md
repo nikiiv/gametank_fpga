@@ -319,4 +319,9 @@ and engine can never diverge; the console time-base stretches while the
 raster keeps real time — same documented-deviation class as the CPU
 GRAM-window and cart-miss stalls. System RAM 32 KB + framebuffers
 32 KB + audio RAM 4 KB stay in BRAM (M4 build: 25% BRAM, 23% logic).
-The M7 cartridge shares the DDR3 client.
+The M7 cartridge shares the DDR3 client. **Amended (M8, 2026-07-08):**
+CPU GRAM-window writes must also stretch the console clock-enable until
+the DDR write command is accepted. A one-entry posted write path lost tight
+spritesheet upload bytes whenever HPS DDR stayed busy long enough for later
+CPU writes to overwrite the pending slot; repro locked in as
+`gram_write_backpressure` and a `gram_ddr` unit backpressure case.

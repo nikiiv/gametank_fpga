@@ -44,8 +44,9 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
 - **Done when:** Klaus gate + first test cart pass in CI.
 - **Done:** CPU patched (WAI/STP/BCD flags + D-clear-on-interrupt, found by
   the Klaus 65C02 gate — see DEPENDENCIES.md §CPU); both Klaus tests pass
-  (96.2M / 66.8M cycles); directed WAI/STP tests cover the W65C02S semantics
-  Klaus skips. `rtl/mainbus.sv` implements the RDY-gated bus (transactions
+  (96.2M / 66.8M cycles before the M8 Rockwell update); directed WAI/STP
+  tests cover the W65C02S semantics Klaus skips. `rtl/mainbus.sv` implements
+  the RDY-gated bus (transactions
   latch at the strobe — DIMUX-derived addresses are only valid then), $2005
   RAM banking (4×8K into 32 KB BRAM), open-bus reads, and the abstract cart
   bus (sim-backed until M7). First cart: `sim/testroms/ram_pattern`.
@@ -171,6 +172,16 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
   engine starvation (`blitter.starved`); repro test `blit_contention`
   (IRQ-chained 4×16 sprites with banked-window execution) failed before,
   passes after. See HARDWARE.md §FPGA memory budget (M8 amendment).
+- **Progress (2026-07-08):** sprite-sheet upload corruption fixed — CPU
+  GRAM-window writes were posted through a single pending slot without
+  stalling RDY, so HPS DDR busy stretches could drop bytes from tight asset
+  uploads. `rtl/gram_ddr.sv` now stalls on pending writes as well as reads;
+  repros: `gram_ddr` CPU write backpressure and `gram_write_backpressure`.
+- **Progress (2026-07-08):** Ganymede Climb Race draw-position bug traced to
+  missing Rockwell/WDC 65C02 bit-branch support. The SDK output uses `BBR6`
+  in the sprite draw routine; the old core treated it as a NOP and fell
+  through to `gx=00`. `BBR/BBS/RMB/SMB` are now implemented and covered by
+  Klaus plus `cpu_bit_ops`.
 
 ## Post-1.0
 

@@ -114,8 +114,12 @@ timing hides real races. Similarly `GT_RDY_GAPS=1` runs the standalone CPU
 harness (Klaus, WAI/STP) with random RDY deassertion, modeling the core's
 stall behavior.
 
+Directed DDR backpressure tests can also force a fixed busy stretch through
+the sim harness. `gram_write_backpressure` uses that path to reproduce lost
+spritesheet upload bytes from the old non-stalling CPU GRAM-write path.
+
 The emulator lockstep patch supports gameplay lockstep of real games:
-`GTE_LOCKSTEP_INPUT="flip:mask,..."` injects pad input at page-flip
+`GTE_LOCKSTEP_INPUT="frame:mask,..."` injects pad input at video-frame
 indices (same schedule as the sim side — see
 `sim/system/test_gany_lockstep.cpp`), and `GTE_ZERO_POWERON=1` zeroes
 RAM/VRAM/GRAM and control registers for determinism. Caveat learned the
@@ -123,6 +127,10 @@ hard way: the emulator's headless ACP timing is broken (`--nosound` runs
 audio off-rate), so games that sync loading/logic to the ACP diverge from
 it after the menu — clean-vs-hostile comparison within our own core is
 the reliable differential there.
+
+The Ganymede Climb Race repro waits 10 seconds after cart load, presses Down
+then Start, waits another 10 seconds, then samples. That path caught the
+missing Rockwell/WDC `BBR6` branch in the sprite draw routine.
 
 Power-on state is game-visible: Ganymede does thousands of banked-window
 reads before its first bank latch, so the cart bank register must power

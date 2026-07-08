@@ -43,18 +43,22 @@ demand, never vendored. Audited 2026-07-06.
      constantly (sample-rate IRQs + main-CPU NMI commands). The sequence now
      records at BRK2 whether it took the NMI vector and only then consumes
      the edge (`NMI_taking`, marked "GameTank mod").
-  6. Rockwell `BBR/BBS/SMB/RMB`: **not implemented** (no GameTank software
-     uses them; they run as correct-length NOPs via `IMPLEMENT_NOPS`).
-     Post-1.0 fidelity item.
+  6. **Rockwell/WDC bit operations (M8, 2026-07-08):** `BBR/BBS zp,rel`
+     and `RMB/SMB zp` implemented. Ganymede's Climb Race draw routine uses
+     `BBR6`; treating it as a NOP made the sprite X parameter fall through
+     to zero.
 - **Import gate (sim/, runs in CI):** Klaus `6502_functional_test.bin` stock
   (success `$3469`, ~96.2M cycles) + 65C02 extended test reassembled from the
-  amb5l CA65 port @ `966b1a35049f9d8be44ad092ec6d43d5ba1831b3` with
-  `rkwl_wdc_op = 0` (success label planted at build time, ~66.8M cycles).
+  amb5l CA65 port @ `966b1a35049f9d8be44ad092ec6d43d5ba1831b3` with the
+  default Rockwell/WDC bit-op tests enabled (success label planted at build
+  time).
   Note: `wdc_op = 1` only makes the extended test *skip* $CB/$DB (Klaus
   covers WAI/STP in the separate interrupt test, which has no CA65 port) —
   actual WAI/STP semantics are covered by our directed test
   (`sim/unit/test_cpu_wai_stp.cpp`): IRQ-wake without vectoring (I=1),
   IRQ-wake with vectoring and resume (I=0), NMI wake, STP halt/reset-revive.
+  `sim/unit/test_cpu_bit_ops.cpp` separately locks the Ganymede-relevant bit
+  op paths under the local CPU harness.
 
 ### 6522 VIA (`rtl/via/via6522.v`)
 - **Upstream:** https://github.com/harbaum/nanomac — `src/macplus/via6522.v`, Till Harbaum's Verilog port of **Gideon Zweijtzer's** heavily reverse-engineered 6522 (1541 Ultimate lineage; accuracy refinements credited to gyurco/Gyorgy Szombathelyi).
@@ -94,7 +98,7 @@ demand, never vendored. Audited 2026-07-06.
 ### Klaus Dormann 65C02 functional tests
 - **Upstream:** https://github.com/Klaus2m5/6502_65C02_functional_tests @ `7954e2dbb49c469ea286070bf46cdd71aeb29e4b` — **GPLv3**.
 - Stock `6502_functional_test.bin` used as-is (success PC `$3469`, entry `$0400`).
-- 65C02 extended test must be **reassembled** with `rkwl_wdc_op = 0` (stock binary requires Rockwell ops) and, once WAI/STP are patched in, `wdc_op = 1` so they are exercised; use amb5l's CA65 port (https://github.com/amb5l/6502_65C02_functional_tests). Pass/fail: PC repeating at same sync address; success address per the `.lst`.
+- 65C02 extended test must be **reassembled** from amb5l's CA65 port (https://github.com/amb5l/6502_65C02_functional_tests) so the build can plant a success label; Rockwell/WDC bit ops run in that gate, while WAI/STP remain covered by directed local tests. Pass/fail: PC repeating at same sync address; success address per the `.lst`.
 - Role: one-time import gate on the vendored CPU (see [TESTING.md](TESTING.md)) — not an ongoing test area.
 
 ### GameTank SDK (test-cart toolchain)

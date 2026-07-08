@@ -30,6 +30,7 @@ struct H {
     struct Job { long due; uint32_t addr; int beats; int beat; };
     std::vector<Job> jobs;
     long t = 0;
+    int busy_for = 0;
 
     H() {
         for (size_t i = 0; i < ddr.size(); i++)
@@ -39,7 +40,9 @@ struct H {
     void clk1() {
         // DDR model (12-tick latency, 1 beat/tick)
         top.ddr_dout_ready = 0;
-        top.ddr_busy = 0;
+        bool busy = busy_for > 0;
+        if (busy_for > 0) busy_for--;
+        top.ddr_busy = busy;
         if (!jobs.empty()) {
             auto& j = jobs.front();
             if (t >= j.due) {
@@ -51,10 +54,10 @@ struct H {
                 if (++j.beat == j.beats) jobs.erase(jobs.begin());
             }
         }
-        if (top.ddr_rd && jobs.size() < 4)
+        if (top.ddr_rd && !busy && jobs.size() < 4)
             jobs.push_back({t + 12, (uint32_t)(top.ddr_addr & 0xFFFF) << 3,
                             top.ddr_burstcnt, 0});
-        if (top.ddr_we)
+        if (top.ddr_we && !busy)
             for (int b = 0; b < 8; b++)
                 if (top.ddr_be & (1 << b))
                     ddr[(((top.ddr_addr & 0xFFFF) << 3) + b) & 0x7FFFF] =
@@ -81,6 +84,32 @@ struct H {
         clk1();
         top.param_we = 0;
         for (int i = 0; i < 6; i++) clk1();
+    }
+
+    void cpuWrite(uint32_t addr, uint8_t data) {
+        long spin = 0;
+        while (top.cpu_stall && spin++ < 1000) clk1();
+        CHECK(spin < 1000, "cpu write stall stuck");
+        top.cpu_addr = addr;
+        top.cpu_wdata = data;
+        top.cpu_we = 1;
+        clk1();
+        top.cpu_we = 0;
+    }
+
+    uint8_t cpuRead(uint32_t addr, long* stallTicks = nullptr) {
+        long pre = 0;
+        while (top.cpu_stall && pre++ < 1000) clk1();
+        CHECK(pre < 1000, "cpu read pre-stall stuck");
+        top.cpu_addr = addr;
+        top.cpu_rd = 1;
+        clk1();
+        top.cpu_rd = 0;
+        long spin = 0;
+        while (top.cpu_stall && spin++ < 1000) clk1();
+        CHECK(spin < 1000, "cpu read stall stuck");
+        if (stallTicks) *stallTicks = spin;
+        return top.cpu_q;
     }
 
     uint8_t gcarry(uint8_t v) const {
@@ -177,16 +206,53 @@ int main() {
     h.top.cpu_we = 1;
     h.clk1();
     h.top.cpu_we = 0;
+    long spin = 0;
+    while (h.top.cpu_stall && spin++ < 2000) h.clk1();
+    CHECK(spin < 2000, "cpu write stall released");
     for (int i = 0; i < 40; i++) h.clk1();
     CHECK(h.ddr[gaddr(2, 33, 44)] == 0x77, "cpu write landed");
 
     h.top.cpu_rd = 1;
     h.clk1();
     h.top.cpu_rd = 0;
-    long spin = 0;
+    spin = 0;
     while (h.top.cpu_stall && spin++ < 200) h.clk1();
     CHECK(spin < 200, "cpu read stall released");
     CHECK(h.top.cpu_q == 0x77, "cpu readback: %02x", h.top.cpu_q);
     std::printf("PASS gram_ddr cpu channel\n");
+
+    long s0 = 0, s1 = 0;
+    uint32_t line = gaddr(1, 22, 32);
+    uint8_t r0 = h.cpuRead(line + 0, &s0);
+    uint8_t r1 = h.cpuRead(line + 1, &s1);
+    CHECK(r0 == h.ddr[line + 0], "cached read fill byte0: %02x", r0);
+    CHECK(r1 == h.ddr[line + 1], "cached read hit byte1: %02x", r1);
+    CHECK(s0 > 0, "first read should miss/fill");
+    CHECK(s1 == 0, "same DDR word read should hit without stall (%ld)", s1);
+    h.cpuWrite(line + 2, 0xEE);
+    uint8_t r2 = h.cpuRead(line + 2, &s1);
+    CHECK(r2 == 0xEE, "cached write-hit readback: %02x", r2);
+    CHECK(s1 == 0, "write-updated cached line should read without stall");
+    std::printf("PASS gram_ddr cpu read cache\n");
+
+    // A spritesheet upload is a long stream of CPU GRAM-window writes. If a
+    // DDR write command is backpressured, the core must stall the CPU rather
+    // than overwrite the single pending write slot with later bytes.
+    const uint32_t base = gaddr(0, 48, 0);
+    h.busy_for = 160;
+    for (int i = 0; i < 16; i++)
+        h.cpuWrite(base + (uint32_t)i, (uint8_t)(0xA0 + i));
+    for (int i = 0; i < 300; i++) h.clk1();
+    int bad = 0;
+    for (int i = 0; i < 16; i++) {
+        uint8_t got = h.ddr[base + (uint32_t)i];
+        uint8_t want = (uint8_t)(0xA0 + i);
+        if (got != want && bad++ < 4)
+            std::fprintf(stderr, "posted write[%d]: %02x want %02x\n",
+                         i, got, want);
+    }
+    CHECK(bad == 0, "%d CPU GRAM-window writes lost under DDR backpressure",
+          bad);
+    std::printf("PASS gram_ddr cpu write backpressure\n");
     return 0;
 }

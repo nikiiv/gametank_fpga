@@ -169,6 +169,10 @@ reg rotate;             // doing rotate (no shift)
 reg backwards;          // backwards branch
 reg cond_true;          // branch condition is true
 reg [3:0] cond_code;    // condition code bits from instruction
+reg [3:0] bit_code;     // bit index/sense for RMB/SMB/BBR/BBS
+reg bit_branch;         // BBR/BBS is using the relative branch sequencer
+reg bit_branch_taken;   // result of BBR/BBS zero-page bit test
+reg bit_write;          // RMB/SMB zero-page read/modify/write
 reg shift_right;        // Instruction ALU shift/rotate right
 reg alu_shift_right;    // Current cycle shift right enable
 reg [3:0] op;           // Main ALU operation for instruction
@@ -196,6 +200,9 @@ reg sei;                // set interrupt
 reg clv;                // clear overflow
 
 reg res;                // in reset
+
+wire [7:0] bit_mask = 8'h01 << bit_code[2:0];
+wire       bit_value = |(DIMUX & bit_mask);
 
 /*
  * ALU operations
@@ -273,7 +280,9 @@ parameter
     JMPIX1 = 6'd52, // JMP (,X)- fetch MSB and send to ALU (+Carry)
     JMPIX2 = 6'd53, // JMP (,X)- Wait for ALU (only if needed)
     WAI0   = 6'd54, // WAI     - wait for IRQ or NMI (GameTank mod)
-    STP0   = 6'd55; // STP     - halted until reset (GameTank mod)
+    STP0   = 6'd55, // STP     - halted until reset (GameTank mod)
+    BBR0   = 6'd56, // BBR/BBS - fetch ZP operand, read bit-test byte
+    BBR1   = 6'd57; // BBR/BBS - fetch relative operand
 
 `ifdef SIM
 
@@ -340,6 +349,8 @@ always @*
             JMPIX2: statename = "JMPIX2";
             WAI0:   statename = "WAI0";
             STP0:   statename = "STP0";
+            BBR0:   statename = "BBR0";
+            BBR1:   statename = "BBR1";
 
     endcase
 
@@ -464,6 +475,7 @@ always @*
         ZPX1,
         INDX2:          AB = { ZEROPAGE, ADD };
 
+        BBR0,
         ZP0,
         INDY0:          AB = { ZEROPAGE, DIMUX };
 
@@ -778,7 +790,8 @@ always @*
          PULL0,
          RTS0:  BI = 8'h00;
 
-         READ:  BI = txb_ins ? (trb_ins ? ~regfile : regfile) : 8'h00;
+         READ:  BI = bit_write ? (bit_code[3] ? bit_mask : ~bit_mask) :
+                     txb_ins ? (trb_ins ? ~regfile : regfile) : 8'h00;
 
          BRA0:  BI = PCL;
 
@@ -858,7 +871,7 @@ always @(posedge clk)
  */
 
 always @(posedge clk)
-    if( state == WRITE)
+    if( state == WRITE && !bit_write )
         Z <= txb_ins ? AZ2 : AZ1;
     else if( state == RTI2 )
         Z <= DIMUX[1];
@@ -870,7 +883,7 @@ always @(posedge clk)
     end
 
 always @(posedge clk)
-    if( state == WRITE && ~txb_ins)
+    if( state == WRITE && ~txb_ins && !bit_write )
         N <= AN1;
     else if( state == RTI2 )
         N <= DIMUX[7];
@@ -976,6 +989,8 @@ always @(posedge clk or posedge reset)
                 8'b0111_1100:   state <= JMPIX0;
                 8'b1100_1011:   state <= WAI0;  // WAI (GameTank mod)
                 8'b1101_1011:   state <= STP0;  // STP (GameTank mod)
+                8'bxxxx_1111:   state <= BBR0;  // BBR/BBS zp,rel
+                8'bxxxx_0111:   state <= ZP0;   // RMB/SMB zp
 `ifdef IMPLEMENT_NOPS
                 8'bxxxx_xx11:   state <= REG;   // (NOP1: 3/7/B/F column)
                 8'bxxx0_0010:   state <= FETCH; // (NOP2: 2 column, 4 column handled correctly below)
@@ -1010,6 +1025,9 @@ always @(posedge clk or posedge reset)
             endcase
 
         ZP0     : state <= write_back ? READ : FETCH;
+
+        BBR0    : state <= BBR1;
+        BBR1    : state <= BRA0;
 
         ZPX0    : state <= ZPX1;
         ZPX1    : state <= write_back ? READ : FETCH;
@@ -1066,8 +1084,10 @@ always @(posedge clk or posedge reset)
         RTS2    : state <= RTS3;
         RTS3    : state <= FETCH;
 
-        BRA0    : state <= cond_true ? BRA1 : DECODE;
-        BRA1    : state <= (CO ^ backwards) ? BRA2 : DECODE;
+        BRA0    : state <= bit_branch ? (bit_branch_taken ? BRA1 : FETCH) :
+                              cond_true ? BRA1 : DECODE;
+        BRA1    : state <= bit_branch ? FETCH :
+                              (CO ^ backwards) ? BRA2 : DECODE;
         BRA2    : state <= DECODE;
 
         JMP0    : state <= JMP1;
@@ -1094,7 +1114,7 @@ always @(posedge clk or posedge reset)
     if( reset )
         SYNC <= 1'b0;
     else if( RDY ) case( state )
-        BRA0   : SYNC <= !cond_true;
+        BRA0   : SYNC <= bit_branch ? 1'b0 : !cond_true;
         BRA1   : SYNC <= !(CO ^ backwards);
         BRA2,
         FETCH,
@@ -1219,6 +1239,7 @@ always @(posedge clk )
         casex( IR )             // DMB: Checked for 65C02 NOP collisions
                 8'b0xxx_x110,   // ASL, ROL, LSR, ROR
                 8'b000x_x100,   // TSB/TRB
+                8'bxxxx_0111,   // RMB/SMB
                 8'b11xx_x110:   // DEC/INC
                                 write_back <= 1;
 
@@ -1313,7 +1334,13 @@ always @(posedge clk )
                 8'b0000_x100:   // TSB
                                 op <= OP_OR;
 
+                8'b1xxx_0111:   // SMB
+                                op <= OP_OR;
+
                 8'b0001_x100:   // TRB
+                                op <= OP_AND;
+
+                8'b0xxx_0111:   // RMB
                                 op <= OP_AND;
 
                 8'b00xx_x110,   // ROL, ASL
@@ -1386,6 +1413,25 @@ always @(posedge clk )
 
                 default:        store_zero <= 0;
         endcase
+
+always @(posedge clk )
+     if( state == DECODE && RDY )
+        bit_write <= (IR[3:0] == 4'h7);   // RMB/SMB
+
+always @(posedge clk )
+     if( state == DECODE && RDY )
+        bit_code <= IR[7:4];
+
+always @(posedge clk )
+     if( RDY ) begin
+        if( state == DECODE )
+            bit_branch <= (IR[3:0] == 4'hf);  // BBR/BBS
+        else if( (state == BRA0 && !bit_branch_taken) || state == BRA1 )
+            bit_branch <= 0;
+
+        if( state == BBR1 )
+            bit_branch_taken <= bit_value == bit_code[3];
+     end
 
 /*
  * special instructions

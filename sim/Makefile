@@ -26,8 +26,8 @@ CFLAGS     := -std=c++17 -O2 -I$(COMMON)
 # <tier>/test_<name>.cpp against RTL_SRCS. Klaus import-gate tests have
 # explicit rules below (extra fetch/build inputs and arguments).
 # ---------------------------------------------------------------------------
-UNIT_TESTS        := video_timing blitter gram_ddr cart pads_via acp mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp
-INTEGRATION_TESTS := cart_ram_pattern cart_download cart_osd_load cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene cart_pads_demo blit_contention gram_window_quadrant blit_bank_race gram_cpu_hostile
+UNIT_TESTS        := video_timing blitter gram_ddr cart pads_via acp mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp cpu_zpx cpu_bit_ops
+INTEGRATION_TESTS := cart_ram_pattern cart_download cart_osd_load cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene cart_pads_demo blit_contention gram_window_quadrant blit_bank_race gram_cpu_hostile gram_write_backpressure
 
 # gametank-test --test NAME passes TEST=NAME
 TEST ?=
@@ -112,14 +112,13 @@ klaus/ca65port/.stamp:
 	cd klaus/ca65port && git checkout -q $(AMB5L_COMMIT)
 	touch $@
 
-# 65C02 extended test, reassembled per docs/DEPENDENCIES.md: Rockwell ops OFF
-# (they run as NOPs in our core), WDC WAI/STP skipped here (they get directed
-# tests instead), and a label planted on the success trap so the testbench
+# 65C02 extended test, reassembled per docs/DEPENDENCIES.md. Rockwell/WDC bit
+# ops are exercised here; WDC WAI/STP are skipped by Klaus and covered by
+# directed tests instead. Plant a label on the success trap so the testbench
 # can detect it exactly.
-klaus/65C02_extended_opcodes_test.bin: klaus/ca65port/.stamp
+klaus/65C02_extended_opcodes_test.bin: klaus/ca65port/.stamp Makefile
 	cd klaus/ca65port/ca65 && \
-	  sed -e 's/^rkwl_wdc_op = 1/rkwl_wdc_op = 0/' \
-	      -e 's/^        success         ;if you get here everything went well/success_pc: success ;(label planted by sim build)/' \
+	  sed -e 's/^        success         ;if you get here everything went well/success_pc: success ;(label planted by sim build)/' \
 	      65C02_extended_opcodes_test.ca65 > extended_gt.ca65 && \
 	  ca65 -g -l extended_gt.lst extended_gt.ca65 && \
 	  ld65 extended_gt.o -o $(abspath $@) -m extended_gt.map -Ln extended_gt.lbl -C example.cfg
@@ -137,6 +136,16 @@ $(OUT)/unit_cpu_klaus: unit/test_cpu_klaus.cpp common/cpu65_harness.h $(CPU_SRCS
 $(OUT)/unit_cpu_wai_stp: unit/test_cpu_wai_stp.cpp common/cpu65_harness.h $(CPU_SRCS) | $(OUT)
 	@mkdir -p obj_dir/unit_cpu_wai_stp
 	$(VERILATOR) $(VFLAGS_CPU) --Mdir obj_dir/unit_cpu_wai_stp -CFLAGS "$(CFLAGS)" \
+		-o $(abspath $@) $(CPU_SRCS) $(abspath $<)
+
+$(OUT)/unit_cpu_zpx: unit/test_cpu_zpx.cpp common/cpu65_harness.h $(CPU_SRCS) | $(OUT)
+	@mkdir -p obj_dir/unit_cpu_zpx
+	$(VERILATOR) $(VFLAGS_CPU) --Mdir obj_dir/unit_cpu_zpx -CFLAGS "$(CFLAGS)" \
+		-o $(abspath $@) $(CPU_SRCS) $(abspath $<)
+
+$(OUT)/unit_cpu_bit_ops: unit/test_cpu_bit_ops.cpp common/cpu65_harness.h $(CPU_SRCS) | $(OUT)
+	@mkdir -p obj_dir/unit_cpu_bit_ops
+	$(VERILATOR) $(VFLAGS_CPU) --Mdir obj_dir/unit_cpu_bit_ops -CFLAGS "$(CFLAGS)" \
 		-o $(abspath $@) $(CPU_SRCS) $(abspath $<)
 
 run-unit-cpu_klaus_6502: $(OUT)/unit_cpu_klaus klaus/upstream/.stamp
