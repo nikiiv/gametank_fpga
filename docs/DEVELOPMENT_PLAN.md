@@ -171,6 +171,20 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
   engine starvation (`blitter.starved`); repro test `blit_contention`
   (IRQ-chained 4×16 sprites with banked-window execution) failed before,
   passes after. See HARDWARE.md §FPGA memory budget (M8 amendment).
+- **Progress:** Ganymede flicker / sprite pop-in root-caused to three
+  emulator-floor deviations, each fixed with a failing-first test
+  (TESTING.md §emulator-floor lessons): VIA reads now come from a bare
+  register-file shadow like the emulator (`via_shadow`; the game seeds
+  its level generator from VIA sweeps), the banked cart window got a
+  16 KB direct-mapped cache so steady-state re-reads are stall-free like
+  real ROM (`cart_cache`; the 2-slot buffer stole ~7k clk/frame from the
+  compositor), and scanout latches VID_OUT_PAGE at active-video start
+  the way the emulator presents once per frame (`vidpage_latch`; the
+  game transiently clears the page bit mid-frame every other frame,
+  which a live mux painted as a flickering band of the mid-composition
+  page). Note: Ganymede's procedural level is seeded from run-timing-
+  dependent state — the generated level legitimately differs between
+  emulator and core (and between runs with different input timing).
 
 ## Post-1.0
 

@@ -172,8 +172,8 @@ end
 // vector/jump-target cycles).
 typedef enum logic [3:0] { SEL_RAM, SEL_CART, SEL_VRAM, SEL_GRAM,
                            SEL_PAD, SEL_VIA, SEL_ARAM, SEL_OPEN } rdsel_e;
-rdsel_e     rd_sel;
-logic [7:0] open_bus;
+rdsel_e     rd_sel /*verilator public_flat_rd*/;
+logic [7:0] open_bus /*verilator public_flat_rd*/;
 
 always_ff @(posedge clk_sys) begin
     if (cpu_ce) begin

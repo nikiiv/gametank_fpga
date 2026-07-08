@@ -128,6 +128,32 @@ Power-on state is game-visible: Ganymede does thousands of banked-window
 reads before its first bank latch, so the cart bank register must power
 up matching the emulator (bank 0), not the pull-up value.
 
+Three more emulator-floor lessons from the Ganymede flicker hunt (M8),
+each with a dedicated integration test:
+
+- **VIA reads are a register file** (`test_via_shadow`): the emulator's
+  VIA returns the last written byte on any read — no live timers, no
+  IRQs. Ganymede sweeps all 16 VIA registers as boot entropy and reads
+  them ~32k times during level load; live via6522 counter values fork
+  its procedural level away from the emulator's.
+- **The banked cart window must be stall-free in steady state**
+  (`test_cart_cache`): real mask ROM has no latency. The old 2-slot word
+  buffer cost Ganymede's compositor ~7k clk of cart stalls per frame.
+  The 16 KB direct-mapped cache makes per-frame tile/sprite re-reads
+  free; only first-touch fetches stall.
+- **VID_OUT_PAGE is sampled per frame, not muxed live**
+  (`test_vidpage_latch`): the emulator presents the page selected by
+  $2007 bit 1 once per host frame, so Ganymede's habit of rewriting
+  $2007 with the page bit cleared for ~4k CPU cycles mid-frame is
+  invisible there. Scanout latches the bit at active-video start;
+  vblank flips still land on time.
+
+The procedural level itself is seeded from run-timing-dependent state
+(shifting the Start press by one page flip changes the generated level),
+so byte-exact gameplay lockstep of Ganymede against the headless
+emulator is not achievable past the menu — scene comparisons must be
+structural (HUD present, page fully composed), not byte-equal.
+
 ## Adding a test
 
 1. Write a minimal test cart in `sim/testroms/<name>/` (cc65 project, makefile
