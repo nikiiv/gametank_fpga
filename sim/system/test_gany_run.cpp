@@ -4,6 +4,7 @@
 //
 // usage: test_gany_nav game.gtr [out_prefix]
 #include "sim_harness.h"
+// scanout capture variant: dumps true displayed frames via captureFrame
 #include <array>
 
 struct Ev { long flip; uint8_t joy; };
@@ -11,9 +12,10 @@ struct Ev { long flip; uint8_t joy; };
 static const Ev SCHED[] = {
     {250, 0x04}, {258, 0x00},        // Down (menu -> Climb Race)
     {270, 0x80}, {278, 0x00},        // Start (confirm)
+    {600, 0x10}, {610, 0x00},        // A: start the auto-run race
 };
 static const int NSCHED = sizeof(SCHED) / sizeof(SCHED[0]);
-static const int SETTLE_FLIPS = 800;  // well past load into the ready scene
+static const int SETTLE_FLIPS = 700;  // well past load into the ready scene
 static const int DUMP_FRAMES  = 12;
 
 int main(int argc, char** argv) {
@@ -31,12 +33,28 @@ int main(int argc, char** argv) {
     sim.reset();
 
     long flips = 0;
+    FILE* bf = std::getenv("GT_BLIT_LOG") ? std::fopen(std::getenv("GT_BLIT_LOG"), "w") : nullptr;
+    bool prevTrig = false;
     int schedPos = 0, dumped = 0;
     uint8_t prevPage = sim.dmaCtl() & 0x02;
     uint64_t guard = sim.cycles + (uint64_t)3000 * 3 * 476000ull;
 
     while (dumped < DUMP_FRAMES && sim.cycles < guard) {
         sim.tick();
+        if (bf) {
+            auto* r = sim.top.rootp;
+            bool trig = r->gametank__DOT__blitter__DOT__trigger;
+            if (trig && !prevTrig)
+                std::fprintf(bf, "%ld %u %u %u %u %u %u %02x %02x\n", flips,
+                    r->gametank__DOT__blitter__DOT__pVX,
+                    r->gametank__DOT__blitter__DOT__pVY,
+                    r->gametank__DOT__blitter__DOT__pGX,
+                    r->gametank__DOT__blitter__DOT__pGY,
+                    r->gametank__DOT__blitter__DOT__pW,
+                    r->gametank__DOT__blitter__DOT__pH,
+                    sim.dmaCtl(), sim.banking());
+            prevTrig = trig;
+        }
         uint8_t page = sim.dmaCtl() & 0x02;
         if (page == prevPage) continue;
         prevPage = page;
@@ -45,6 +63,14 @@ int main(int argc, char** argv) {
             schedPos++;
         }
         if (flips == SETTLE_FLIPS) {
+            for (int fc = 0; fc < 8; fc++) {
+                Frame fr = captureFrame(sim);
+                char nm[128];
+                std::snprintf(nm, sizeof nm, "%s_scan%d.ppm", prefix, fc);
+                fr.writePPM(nm);
+            }
+        }
+        if (false) {
             for (int p2 = 0; p2 < 2; p2++) {
                 char nm[128];
                 std::snprintf(nm, sizeof nm, "%s_page%d.bin", prefix, p2);
@@ -67,6 +93,7 @@ int main(int argc, char** argv) {
         }
         flips++;
     }
+    if (bf) std::fclose(bf);
     std::printf("flips=%ld dumped=%d\n", flips, dumped);
     return dumped == DUMP_FRAMES ? 0 : 1;
 }

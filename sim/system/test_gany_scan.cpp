@@ -4,6 +4,7 @@
 //
 // usage: test_gany_nav game.gtr [out_prefix]
 #include "sim_harness.h"
+// scanout capture variant: dumps true displayed frames via captureFrame
 #include <array>
 
 struct Ev { long flip; uint8_t joy; };
@@ -45,6 +46,14 @@ int main(int argc, char** argv) {
             schedPos++;
         }
         if (flips == SETTLE_FLIPS) {
+            for (int fc = 0; fc < 8; fc++) {
+                Frame fr = captureFrame(sim);
+                char nm[128];
+                std::snprintf(nm, sizeof nm, "%s_scan%d.ppm", prefix, fc);
+                fr.writePPM(nm);
+            }
+        }
+        if (false) {
             for (int p2 = 0; p2 < 2; p2++) {
                 char nm[128];
                 std::snprintf(nm, sizeof nm, "%s_page%d.bin", prefix, p2);

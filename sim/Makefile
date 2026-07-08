@@ -112,14 +112,13 @@ klaus/ca65port/.stamp:
 	cd klaus/ca65port && git checkout -q $(AMB5L_COMMIT)
 	touch $@
 
-# 65C02 extended test, reassembled per docs/DEPENDENCIES.md: Rockwell ops OFF
-# (they run as NOPs in our core), WDC WAI/STP skipped here (they get directed
-# tests instead), and a label planted on the success trap so the testbench
-# can detect it exactly.
+# 65C02 extended test, reassembled per docs/DEPENDENCIES.md: Rockwell bit ops
+# ON (rkwl_wdc_op = 1 exercises BBR/BBS/RMB/SMB, which Ganymede uses — M8;
+# the same flag makes the test *skip* WAI/STP, which have directed tests),
+# and a label planted on the success trap so the testbench can detect it.
 klaus/65C02_extended_opcodes_test.bin: klaus/ca65port/.stamp
 	cd klaus/ca65port/ca65 && \
-	  sed -e 's/^rkwl_wdc_op = 1/rkwl_wdc_op = 0/' \
-	      -e 's/^        success         ;if you get here everything went well/success_pc: success ;(label planted by sim build)/' \
+	  sed -e 's/^        success         ;if you get here everything went well/success_pc: success ;(label planted by sim build)/' \
 	      65C02_extended_opcodes_test.ca65 > extended_gt.ca65 && \
 	  ca65 -g -l extended_gt.lst extended_gt.ca65 && \
 	  ld65 extended_gt.o -o $(abspath $@) -m extended_gt.map -Ln extended_gt.lbl -C example.cfg

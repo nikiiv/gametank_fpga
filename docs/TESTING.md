@@ -148,11 +148,14 @@ each with a dedicated integration test:
   invisible there. Scanout latches the bit at active-video start;
   vblank flips still land on time.
 
-The procedural level itself is seeded from run-timing-dependent state
-(shifting the Start press by one page flip changes the generated level),
-so byte-exact gameplay lockstep of Ganymede against the headless
-emulator is not achievable past the menu — scene comparisons must be
-structural (HUD present, page fully composed), not byte-equal.
+A caution from the same hunt: with the pre-M8 CPU (no Rockwell bit
+instructions) Ganymede's level generation *appeared* chaotically seeded
+by input timing — that was derailed execution, not real nondeterminism.
+Byte-exact gameplay lockstep against the headless emulator still fails
+past the menu for the documented ACP-timing reason, so scene comparisons
+remain structural, but treat "the game is nondeterministic" conclusions
+with suspicion until the instruction stream is verified (the Klaus
+import gate now covers the full W65C02S opcode set, rkwl_wdc_op = 1).
 
 ## Adding a test
 

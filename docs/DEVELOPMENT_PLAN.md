@@ -182,9 +182,19 @@ Milestones are sequential; each gates on its acceptance criteria passing in CI
   the way the emulator presents once per frame (`vidpage_latch`; the
   game transiently clears the page bit mid-frame every other frame,
   which a live mux painted as a flickering band of the mid-composition
-  page). Note: Ganymede's procedural level is seeded from run-timing-
-  dependent state — the generated level legitimately differs between
-  emulator and core (and between runs with different input timing).
+  page).
+- **Progress: Ganymede SOLVED — missing Rockwell/WDC 65C02 bit
+  instructions.** The game executes RMB/SMB/BBR/BBS ~1.5M times between
+  menu and race; the vendored CPU ran the x7/xF opcode columns as 1-byte
+  NOPs, derailing execution into the operand bytes — heroine drawn ~90px
+  off (visible only during slash/jump), flickering misplaced sprites.
+  Implemented in `rtl/cpu/cpu_65c02.v` (DEPENDENCIES.md §CPU mod 6); the
+  Klaus 65C02 extended import gate now runs with `rkwl_wdc_op = 1`,
+  exercising all 32 opcodes exhaustively. Post-fix, the sim scanout of
+  the Climb Race ready scene matches the emulator's composition
+  (heroine center-screen on grass, clean idle-animation deltas). The
+  earlier "different procedural level" observations were an artifact of
+  the derailed CPU execution, not real seed divergence.
 
 ## Post-1.0
 

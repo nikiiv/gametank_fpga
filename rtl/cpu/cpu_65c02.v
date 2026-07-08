@@ -183,6 +183,11 @@ reg adj_bcd;            // results should be BCD adjusted
 reg store_zero;         // doing STZ instruction
 reg trb_ins;            // doing TRB instruction
 reg txb_ins;            // doing TSB/TRB instruction
+reg rsb_ins;            // doing RMB/SMB instruction (GameTank mod)
+reg bbx_ins;            // doing BBR/BBS instruction (GameTank mod)
+reg bbx_cond;           // latched BBR/BBS branch condition (GameTank mod)
+reg [2:0] bit_sel;      // RMB/SMB/BBR/BBS bit number, latched at DECODE (GameTank mod)
+reg bit_set;            // 1 = SMB/BBS, 0 = RMB/BBR, latched at DECODE (GameTank mod)
 reg bit_ins;            // doing BIT instruction
 reg bit_ins_nv;         // doing BIT instruction that will update the n and v flags (i.e. not BIT imm)
 reg plp;                // doing PLP instruction
@@ -273,7 +278,9 @@ parameter
     JMPIX1 = 6'd52, // JMP (,X)- fetch MSB and send to ALU (+Carry)
     JMPIX2 = 6'd53, // JMP (,X)- Wait for ALU (only if needed)
     WAI0   = 6'd54, // WAI     - wait for IRQ or NMI (GameTank mod)
-    STP0   = 6'd55; // STP     - halted until reset (GameTank mod)
+    STP0   = 6'd55, // STP     - halted until reset (GameTank mod)
+    BBR0   = 6'd56, // BBR/BBS - fetch ZP address (GameTank mod)
+    BBR1   = 6'd57; // BBR/BBS - read ZP, latch bit condition (GameTank mod)
 
 `ifdef SIM
 
@@ -396,6 +403,7 @@ always @*
         ABSX0,
         FETCH,
         BRA0,
+        BBR1,           // consume the BBR/BBS rel byte (GameTank mod)
         BRA2,
         BRK3,
         JMPI1,
@@ -465,6 +473,7 @@ always @*
         INDX2:          AB = { ZEROPAGE, ADD };
 
         ZP0,
+        BBR0,           // (GameTank mod)
         INDY0:          AB = { ZEROPAGE, DIMUX };
 
         REG,
@@ -704,6 +713,12 @@ always @*
         alu_shift_right = 0;
 
 /*
+ * RMB/SMB bit mask from the opcode fields latched at DECODE (GameTank mod).
+ */
+
+wire [7:0] rsb_mask = 8'h01 << bit_sel;
+
+/*
  * Sign extend branch offset.
  */
 
@@ -778,7 +793,8 @@ always @*
          PULL0,
          RTS0:  BI = 8'h00;
 
-         READ:  BI = txb_ins ? (trb_ins ? ~regfile : regfile) : 8'h00;
+         READ:  BI = rsb_ins ? (bit_set ? rsb_mask : ~rsb_mask) :  // (GameTank mod)
+                     txb_ins ? (trb_ins ? ~regfile : regfile) : 8'h00;
 
          BRA0:  BI = PCL;
 
@@ -858,7 +874,7 @@ always @(posedge clk)
  */
 
 always @(posedge clk)
-    if( state == WRITE)
+    if( state == WRITE && ~rsb_ins)     // (GameTank mod: RMB/SMB flag-free)
         Z <= txb_ins ? AZ2 : AZ1;
     else if( state == RTI2 )
         Z <= DIMUX[1];
@@ -870,7 +886,7 @@ always @(posedge clk)
     end
 
 always @(posedge clk)
-    if( state == WRITE && ~txb_ins)
+    if( state == WRITE && ~txb_ins && ~rsb_ins)  // (GameTank mod)
         N <= AN1;
     else if( state == RTI2 )
         N <= DIMUX[7];
@@ -976,6 +992,8 @@ always @(posedge clk or posedge reset)
                 8'b0111_1100:   state <= JMPIX0;
                 8'b1100_1011:   state <= WAI0;  // WAI (GameTank mod)
                 8'b1101_1011:   state <= STP0;  // STP (GameTank mod)
+                8'bxxxx_0111:   state <= ZP0;   // RMB/SMB zp (GameTank mod)
+                8'bxxxx_1111:   state <= BBR0;  // BBR/BBS zp,rel (GameTank mod)
 `ifdef IMPLEMENT_NOPS
                 8'bxxxx_xx11:   state <= REG;   // (NOP1: 3/7/B/F column)
                 8'bxxx0_0010:   state <= FETCH; // (NOP2: 2 column, 4 column handled correctly below)
@@ -1067,6 +1085,9 @@ always @(posedge clk or posedge reset)
         RTS3    : state <= FETCH;
 
         BRA0    : state <= cond_true ? BRA1 : DECODE;
+
+        BBR0    : state <= BBR1;    // (GameTank mod)
+        BBR1    : state <= BRA0;    // (GameTank mod)
         BRA1    : state <= (CO ^ backwards) ? BRA2 : DECODE;
         BRA2    : state <= DECODE;
 
@@ -1219,6 +1240,7 @@ always @(posedge clk )
         casex( IR )             // DMB: Checked for 65C02 NOP collisions
                 8'b0xxx_x110,   // ASL, ROL, LSR, ROR
                 8'b000x_x100,   // TSB/TRB
+                8'bxxxx_0111,   // RMB/SMB (GameTank mod)
                 8'b11xx_x110:   // DEC/INC
                                 write_back <= 1;
 
@@ -1310,6 +1332,12 @@ always @(posedge clk )
 always @(posedge clk )
      if( state == DECODE && RDY )
         casex( IR )
+                8'b0xxx_0111:   // RMB (GameTank mod)
+                                op <= OP_AND;
+
+                8'b1xxx_0111:   // SMB (GameTank mod)
+                                op <= OP_OR;
+
                 8'b0000_x100:   // TSB
                                 op <= OP_OR;
 
@@ -1377,6 +1405,40 @@ always @(posedge clk )
                 default:        trb_ins <= 0;
         endcase
 
+/*
+ * GameTank mod: Rockwell/WDC bit instructions (W65C02S has them; the
+ * GameTank emulator implements them; Ganymede executes them by the
+ * hundred-thousand). RMB/SMB ride the zero-page read-modify-write path
+ * with a decoded mask operand; BBR/BBS read zero page via BBR0/BBR1 and
+ * reuse the branch datapath with the latched bit as the condition.
+ */
+
+always @(posedge clk )
+     if( state == DECODE && RDY )
+        casex( IR )
+                8'bxxxx_0111:   // RMB/SMB
+                                rsb_ins <= 1;
+
+                default:        rsb_ins <= 0;
+        endcase
+
+always @(posedge clk )
+     if( state == DECODE && RDY )
+        casex( IR )
+                8'bxxxx_1111:   // BBR/BBS
+                                bbx_ins <= 1;
+
+                default:        bbx_ins <= 0;
+        endcase
+
+always @(posedge clk)
+     if( state == DECODE && RDY )
+        { bit_set, bit_sel } <= { IR[7], IR[6:4] };
+
+always @(posedge clk)
+    if( state == BBR1 && RDY )
+        bbx_cond <= (DIMUX[bit_sel] == bit_set);
+
 always @(posedge clk )
      if( state == DECODE && RDY )
         casex( IR )
@@ -1407,18 +1469,24 @@ always @(posedge clk)
     if( RDY )
         cond_code <= IR[7:4];
 
+reg cond_true_std;      // flag-based condition (GameTank mod: renamed)
+
 always @*
     case( cond_code )
-            4'b0001: cond_true = ~N;
-            4'b0011: cond_true = N;
-            4'b0101: cond_true = ~V;
-            4'b0111: cond_true = V;
-            4'b1001: cond_true = ~C;
-            4'b1011: cond_true = C;
-            4'b1101: cond_true = ~Z;
-            4'b1111: cond_true = Z;
-            default: cond_true = 1; // BRA is 80
+            4'b0001: cond_true_std = ~N;
+            4'b0011: cond_true_std = N;
+            4'b0101: cond_true_std = ~V;
+            4'b0111: cond_true_std = V;
+            4'b1001: cond_true_std = ~C;
+            4'b1011: cond_true_std = C;
+            4'b1101: cond_true_std = ~Z;
+            4'b1111: cond_true_std = Z;
+            default: cond_true_std = 1; // BRA is 80
     endcase
+
+// GameTank mod: BBR/BBS branch on the bit latched from zero page in BBR1
+always @*
+    cond_true = bbx_ins ? bbx_cond : cond_true_std;
 
 
 reg NMI_1 = 0;          // delayed NMI signal

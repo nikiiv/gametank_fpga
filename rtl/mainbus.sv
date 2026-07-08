@@ -71,9 +71,10 @@ module mainbus
     input  logic        nmi          // vsync NMI (from scanout, gated dma_ctl[2])
 );
 
-wire [15:0] cpu_ab;
+wire [15:0] cpu_ab /*verilator public_flat_rd*/;
+wire        cpu_sync /*verilator public_flat_rd*/;
 wire  [7:0] cpu_do;
-logic [7:0] cpu_di;
+logic [7:0] cpu_di /*verilator public_flat_rd*/;
 wire        cpu_we;
 
 /* verilator lint_off PINCONNECTEMPTY */
@@ -88,7 +89,7 @@ cpu_65c02 cpu
     .IRQ   (irq),
     .NMI   (nmi),
     .RDY   (cpu_ce),
-    .SYNC  ()
+    .SYNC  (cpu_sync)
 );
 /* verilator lint_on PINCONNECTEMPTY */
 

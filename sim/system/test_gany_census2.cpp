@@ -10,7 +10,7 @@
 struct Ev { long flip; uint8_t joy; };
 static const Ev SCHED[] = {
     {250, 0x04}, {258, 0x00},        // Down (menu -> Climb Race)
-    {270, 0x80}, {278, 0x00},        // Start (confirm)
+    {271, 0x80}, {279, 0x00},        // Start (confirm)
 };
 static const int NSCHED = sizeof(SCHED) / sizeof(SCHED[0]);
 
