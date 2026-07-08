@@ -226,6 +226,14 @@ to M9 below.
   (N-thousand-frame scripted runs, screenshot-hash checkpoints); fix
   divergences — the M8 opcode/write-path fixes may change behavior in
   other titles too
+- Per-opcode cycle-count census (unit tier): execute every opcode /
+  addressing-mode variant on the CPU harness — including page-cross and
+  branch-taken/not-taken cases — count RDY strobes, and compare against
+  a table extracted from the emulator's `mos6502` cycle counts (the
+  compatibility floor games were tuned against). Closes the one detail
+  the Klaus suite doesn't check: it validates semantics, not timing —
+  a game timing raster/audio loops by instruction cycles could diverge
+  undetected today
 - OSD polish (config string, reset, aspect options), analog video verified
 - Docs finalized; release `.rbf` + submission prep for MiSTer-devel
 - **Done when:** library passes; manual on-hardware checklist signed off.
