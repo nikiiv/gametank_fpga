@@ -222,11 +222,15 @@ to M9 below.
 
 ## M9 — Library sweep & release
 
-### M9.1 — Flash-save persistence (in progress)
+### M9.1 — Flash-save persistence ✅ (2026-07-08)
 
 **Acceptance gate: Ganymede boots into the main game (New Game — not
 Climb Race) on hardware, and its flash save survives a core power
-cycle.**
+cycle.** Hardware gate MET: an automated MGL boot of Ganymede + a
+virtual-gamepad Start press enters New Game, which renders the HP HUD
+and a live, input-responsive platform level (the main game flash-writes
+its save area on entry — it froze there before M8's flash-write set).
+Round-trip persistence verified in sim (`flash_save_roundtrip`).
 
 - Flash-save persistence to SD (flash-write *emulation* shipped in M8;
   saves currently live in the DDR3 cart image and die with the session —
