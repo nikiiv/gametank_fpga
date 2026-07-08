@@ -139,13 +139,18 @@ always_ff @(posedge clk_sys) begin
         dirty        <= 1'b0;
     end
 
+    // Saving is enabled whenever a cartridge is present — not gated on a
+    // mounted save file. The MiSTer framework associates <rom>.sav with the
+    // save slot on ROM load and creates it on the first sd_wr, so the first
+    // save must be able to run before any file exists (img_mounted only
+    // signals an EXISTING file, used to gate restore).
     if (save_trigger && cart_present) begin
         dirty <= 1'b1;
-        if (mounted && !readonly_r) save_pend <= 1'b1;
+        if (!readonly_r) save_pend <= 1'b1;
     end
-    if (bk_save && !save_q && mounted && !readonly_r)
+    if (bk_save && !save_q && cart_present && !readonly_r)
         save_pend <= 1'b1;
-    if (osd_open && !osd_q && autosave && dirty && mounted && !readonly_r)
+    if (osd_open && !osd_q && autosave && dirty && cart_present && !readonly_r)
         save_pend <= 1'b1;
     if (bk_load && !load_q && mounted)
         restore_pend <= 1'b1;

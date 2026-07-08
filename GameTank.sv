@@ -63,7 +63,7 @@ assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
 localparam CONF_STR = {
 	"GameTank;;",
 	"-;",
-	"F1,GTR,Load Cartridge;",
+	"FS1,GTR,Load Cartridge;",
 	"-;",
 	"D0RC,Load Backup RAM;",
 	"D0RD,Save Backup RAM;",
