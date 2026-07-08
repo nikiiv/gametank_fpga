@@ -226,7 +226,14 @@ to M9 below.
   saves currently live in the DDR3 cart image and die with the session —
   Ganymede's main game saves through it, so it leads M9). Emulator
   behavior: `$90` is the game-issued save trigger; persistence target is
-  the MiSTer save-file convention
+  the MiSTer save-file convention. Design decided 2026-07-08: raw
+  full-image `.sav` sized to the cart image (2 MB for Flash2M — the only
+  type that can save), streamed DDR3↔SD-block by a new `savectl` ddr_mux
+  client; restore = overlay after download + cart-cache sweep. Whole-
+  image writes first; dirty-sector tracking (the flash FSM already knows
+  touched sectors) only if the ~2 s background save is felt on hardware.
+  NOT emulator `.xor`-compatible — decision + reconsideration paths
+  recorded in REQUIREMENTS.md §scope cuts
 - Run the known game library + SDK samples through the system suite
   (N-thousand-frame scripted runs, screenshot-hash checkpoints); fix
   divergences — the M8 opcode/write-path fixes may change behavior in

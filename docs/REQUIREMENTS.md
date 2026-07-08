@@ -44,9 +44,22 @@ GameTank game and SDK sample behaves identically to real hardware.
 
 ## Phase-1 scope cuts (deliberate)
 
-- **Cartridge is read-only.** Flash-write emulation (command set of the real
-  flash part) and save persistence to SD are specified in
-  [HARDWARE.md](HARDWARE.md) but implemented post-1.0.
+- ~~**Cartridge is read-only.**~~ Superseded: flash-write emulation shipped
+  in M8 (Ganymede requires it); save persistence to SD is M9.
+- **Save-file format is NOT emulator-compatible** (decided 2026-07-08).
+  The desktop emulator persists flash as `<rom>.xor` — a full-image XOR
+  diff against the pristine `.gtr`, rewritten on every game-issued `$90`
+  flash command. The core instead saves the raw modified flash image as
+  MiSTer-conventional `saves/GameTank/<game>.sav`. Rationale: producing
+  an XOR diff requires the pristine original image, which the core no
+  longer has once a save is overlaid into the DDR3 cart image — `.xor`
+  support would cost a second 2 MB DDR copy (or HPS-side conversion) for
+  no functional gain. Consequence: saves cannot be copied between the
+  desktop emulator and the MiSTer. **To reconsider:** either keep a
+  pristine copy of the image in DDR3 (base +2 MB, then XOR on the fly
+  during the save stream), or convert offline (`sav = gtr XOR xor`, a
+  trivial script — could ship in `tools/`); the on-disk formats differ
+  only by that XOR against the ROM.
 - No "no cartridge inserted" behavior beyond a sane idle screen.
 - Exotic dev-hardware variants (early board revisions) are out of scope; we
   target the current production hardware revision.
