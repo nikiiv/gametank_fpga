@@ -67,6 +67,14 @@ public:
     static constexpr uint32_t DDR_MASK = 0x3FFFFF;         // 4 MB window
     static constexpr uint32_t CART_OFF = 0x100000;
     std::vector<uint8_t> ddr = std::vector<uint8_t>(4 * 1024 * 1024, 0);
+
+    // SD save-slot server (hps_io block interface role): backing store for
+    // the mounted .sav; auto-extends on writes like the framework's file.
+    std::vector<uint8_t> savefile;
+    bool     savMounted = false;
+    int      sdPhase = 0;      // 0 idle, 1 read-stream, 2 write-stream
+    int      sdIdx = 0;
+    uint32_t sdLba = 0;
     struct DdrJob { uint64_t due; uint32_t byteOff; int beats; int beat; };
     std::vector<DdrJob> ddrJobs;
 
@@ -127,6 +135,9 @@ public:
 
     // --- M7 DDR3 cartridge (rtl/cart.sv) -----------------------------------
 
+    uint8_t saveState() const {
+        return top.rootp->gametank__DOT__savectl__DOT__st;
+    }
     bool cartPresent() const {
         return top.rootp->gametank__DOT__cart__DOT__present_r;
     }
@@ -185,9 +196,75 @@ public:
 
     // One clk_sys cycle. onPixel fires at the posedge where ce_pix is high,
     // with output values as they are latched by the framework.
+    // Mount a save image (pulse img_mounted for one tick). An empty vector
+    // mounts a zero-size file — savable but nothing to restore.
+    void mountSave(std::vector<uint8_t> data = {}, bool readonly = false) {
+        savefile = std::move(data);
+        savMounted = true;
+        top.img_size = (uint64_t)savefile.size();
+        top.img_readonly = readonly;
+        top.img_mounted = 1;
+        tick();
+        top.img_mounted = 0;
+    }
+
+    void sdStep() {
+        top.sd_buff_wr = 0;
+        switch (sdPhase) {
+        case 0:
+            if (!savMounted) break;
+            if (top.sd_rd) {
+                sdLba = top.sd_lba;
+                sdIdx = 0;
+                top.sd_ack = 1;
+                sdPhase = 1;
+            }
+            else if (top.sd_wr) {
+                sdLba = top.sd_lba;
+                sdIdx = 0;
+                if (savefile.size() < (size_t)(sdLba + 1) * 512)
+                    savefile.resize((size_t)(sdLba + 1) * 512, 0);
+                top.sd_ack = 1;
+                sdPhase = 2;
+            }
+            break;
+        case 1:   // stream block to core, one byte per clk
+            if (sdIdx < 512) {
+                uint8_t v = ((size_t)sdLba * 512 + sdIdx) < savefile.size()
+                                ? savefile[(size_t)sdLba * 512 + sdIdx]
+                                : 0;
+                top.sd_buff_addr = sdIdx;
+                top.sd_buff_dout = v;
+                top.sd_buff_wr = 1;
+                sdIdx++;
+            }
+            else {
+                top.sd_ack = 0;
+                sdPhase = 0;
+            }
+            break;
+        case 2:   // stream block from core to file. sd_buff_din is the core's
+                  // registered bb[sd_buff_addr], valid one tick after the
+                  // address is presented — so capture byte (sdIdx-1) while
+                  // presenting address sdIdx. 513 ticks, no byte dropped.
+            if (sdIdx >= 1)
+                savefile[(size_t)sdLba * 512 + sdIdx - 1] = top.sd_buff_din;
+            if (sdIdx < 512) {
+                top.sd_buff_addr = sdIdx;
+                sdIdx++;
+            }
+            else {
+                top.sd_ack = 0;
+                sdPhase = 0;
+            }
+            break;
+        }
+    }
+
     void tick(const std::function<void(const Pixel&)>& onPixel = nullptr) {
         top.cart_data = cart[top.cart_addr & 0x7FFF];
         ddrStep();
+        sdStep();
 
         top.clk_sys = 0;
         top.eval();

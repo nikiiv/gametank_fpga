@@ -60,6 +60,7 @@ module cart
     output logic [7:0]  cart_data,      // valid by the next strobe
     output logic        cart_stall,     // freeze cpu_ce while a miss is out
     output logic        cart_present,
+    output logic        save_trigger,   // 1-clk pulse: game wrote flash $90
 
     // VIA Port A pin levels (bank shift register)
     input  logic [7:0]  via_pa,
@@ -313,6 +314,8 @@ always_ff @(posedge clk_sys) begin
         fixedram[fw_off[13:3]] <= ddr_dout;
     fixed_qw <= fixedram[fx_word];
 
+    save_trigger <= 1'b0;
+
     // ---- flash write intake (reset-sensitive) ----------------------------
     if (reset) begin
         flash_wrmode <= 1'b0;
@@ -431,7 +434,11 @@ always_ff @(posedge clk_sys) begin
                         fw_off <= 21'h1FC000; er_end <= 21'h1FDFFF;
                     end
                 end
-                // $90 (save trigger) and unlock bytes: no-ops
+                // $90 arms the persist streamer (savectl); the emulator
+                // writes its save file on the same command. Unlock bytes
+                // and everything else: no-ops.
+                else if (fw_data == 8'h90)
+                    save_trigger <= 1'b1;
             end
             else if (fw_busy && !fw_isprog) begin
                 // one erase word per dispatch — reads/fetches interleave,

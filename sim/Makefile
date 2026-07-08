@@ -13,7 +13,7 @@ OUT     := out
 
 CPU_SRCS := $(RTL_DIR)/cpu/cpu_65c02.v $(RTL_DIR)/cpu/ALU.v
 RTL_SRCS := $(abspath waivers.vlt) $(RTL_DIR)/gametank.sv $(RTL_DIR)/gtvideo.sv \
-            $(RTL_DIR)/mainbus.sv $(RTL_DIR)/acp.sv $(RTL_DIR)/pads.sv $(RTL_DIR)/via/via6522.v $(RTL_DIR)/vram.sv $(RTL_DIR)/gram_ddr.sv $(RTL_DIR)/cart.sv $(RTL_DIR)/ddr_mux.sv $(RTL_DIR)/blitter.sv $(RTL_DIR)/palette.sv $(CPU_SRCS)
+            $(RTL_DIR)/mainbus.sv $(RTL_DIR)/acp.sv $(RTL_DIR)/pads.sv $(RTL_DIR)/via/via6522.v $(RTL_DIR)/vram.sv $(RTL_DIR)/gram_ddr.sv $(RTL_DIR)/cart.sv $(RTL_DIR)/ddr_mux.sv $(RTL_DIR)/savectl.sv $(RTL_DIR)/blitter.sv $(RTL_DIR)/palette.sv $(CPU_SRCS)
 
 # Our own RTL must stay -Wall clean; the vendored CPU is exempt (policy:
 # vendored cores are not linted/fixed), so its builds are -Wno-fatal.
@@ -27,7 +27,7 @@ CFLAGS     := -std=c++17 -O2 -I$(COMMON)
 # explicit rules below (extra fetch/build inputs and arguments).
 # ---------------------------------------------------------------------------
 UNIT_TESTS        := video_timing blitter gram_ddr cart pads_via acp mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp cpu_zpx cpu_bit_ops
-INTEGRATION_TESTS := cart_ram_pattern cart_download cart_osd_load cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene cart_pads_demo blit_contention gram_window_quadrant blit_bank_race gram_cpu_hostile gram_write_backpressure flash_persist cart_cache vidpage_latch via_shadow
+INTEGRATION_TESTS := cart_ram_pattern cart_download cart_osd_load cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene cart_pads_demo blit_contention gram_window_quadrant blit_bank_race gram_cpu_hostile gram_write_backpressure flash_persist flash_save_roundtrip cart_cache vidpage_latch via_shadow
 
 # gametank-test --test NAME passes TEST=NAME
 TEST ?=

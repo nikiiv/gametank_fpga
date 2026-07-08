@@ -63,7 +63,11 @@ assign VIDEO_ARY = (!ar) ? 12'd3 : 12'd0;
 localparam CONF_STR = {
 	"GameTank;;",
 	"-;",
-	"F1,GTR,Load Cartridge;",
+	"FS1,GTR,Load Cartridge;",
+	"-;",
+	"D0RC,Load Backup RAM;",
+	"D0RD,Save Backup RAM;",
+	"D0OE,Autosave,Off,On;",
 	"-;",
 	"O[122:121],Aspect ratio,Original,Full Screen,[ARC1],[ARC2];",
 	"-;",
@@ -91,7 +95,20 @@ hps_io #(.CONF_STR(CONF_STR)) hps_io
 
 	.buttons(buttons),
 	.status(status),
-	.status_menumask(0),
+	.status_menumask({15'd0, ~bk_ena}),   // D0 gates the save OSD entries
+
+	.sd_lba('{sd_lba}),
+	.sd_blk_cnt('{6'd0}),                  // 1 block (512 B) per transfer
+	.sd_rd(sd_rd),
+	.sd_wr(sd_wr),
+	.sd_ack(sd_ack),
+	.sd_buff_addr(sd_buff_addr),
+	.sd_buff_dout(sd_buff_dout),
+	.sd_buff_din('{sd_buff_din}),
+	.sd_buff_wr(sd_buff_wr),
+	.img_mounted(img_mounted),
+	.img_readonly(img_readonly),
+	.img_size(img_size),
 
 	.joystick_0(joystick_0),
 	.joystick_1(joystick_1),
@@ -110,6 +127,18 @@ wire        ioctl_wr;
 wire [26:0] ioctl_addr;
 wire  [7:0] ioctl_dout;
 wire        ioctl_wait;
+
+// Flash-save (M9.1): the SD save slot. bk_ena tracks whether a save file
+// is mounted; it gates the OSD entries and enables autosave.
+wire [31:0] sd_lba;
+wire        sd_rd, sd_wr, sd_ack;
+wire  [8:0] sd_buff_addr;
+wire  [7:0] sd_buff_dout, sd_buff_din;
+wire        sd_buff_wr;
+wire        img_mounted, img_readonly;
+wire [63:0] img_size;
+reg         bk_ena = 0;
+always @(posedge clk_sys) if(img_mounted) bk_ena <= 1;
 
 // index 1 = OSD "Load Cartridge"; index 0 = boot.rom auto-load at core start
 wire cart_download = ioctl_download && (ioctl_index[5:0] <= 6'd1);
@@ -165,6 +194,22 @@ gametank gametank
 	.dl_data   (ioctl_dout),
 	.dl_busy   (ioctl_wait),
 	.dl_wait   (dl_wait),
+
+	.sd_lba       (sd_lba),
+	.sd_rd        (sd_rd),
+	.sd_wr        (sd_wr),
+	.sd_ack       (sd_ack),
+	.sd_buff_addr (sd_buff_addr),
+	.sd_buff_dout (sd_buff_dout),
+	.sd_buff_din  (sd_buff_din),
+	.sd_buff_wr   (sd_buff_wr),
+	.img_mounted  (img_mounted),
+	.img_readonly (img_readonly),
+	.img_size     (img_size),
+	.bk_load      (status[12]),
+	.bk_save      (status[13]),
+	.autosave     (status[14]),
+	.osd_open     (OSD_STATUS),
 
 	.ddr_rd         (DDRAM_RD),
 	.ddr_we         (DDRAM_WE),
