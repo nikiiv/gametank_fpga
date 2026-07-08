@@ -6,6 +6,7 @@ set_global_assignment -name SYSTEMVERILOG_FILE rtl/blitter.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/mainbus.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/cart.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/ddr_mux.sv
+set_global_assignment -name SYSTEMVERILOG_FILE rtl/savectl.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/acp.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/pads.sv
 set_global_assignment -name SYSTEMVERILOG_FILE rtl/via/via6522.v

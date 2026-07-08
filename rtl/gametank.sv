@@ -31,6 +31,23 @@ module gametank
     output logic        dl_busy,
     output logic        dl_wait,   // keep the console in reset (fill running)
 
+    // flash-save persistence (hps_io SD block interface / sim harness)
+    output logic [31:0] sd_lba,
+    output logic        sd_rd,
+    output logic        sd_wr,
+    input  logic        sd_ack,
+    input  logic [8:0]  sd_buff_addr,
+    input  logic [7:0]  sd_buff_dout,
+    output logic [7:0]  sd_buff_din,
+    input  logic        sd_buff_wr,
+    input  logic        img_mounted,
+    input  logic        img_readonly,
+    input  logic [63:0] img_size,
+    input  logic        bk_load,
+    input  logic        bk_save,
+    input  logic        autosave,
+    input  logic        osd_open,
+
     // DDRAM client (GRAM lives in HPS DDR3 — see rtl/gram_ddr.sv)
     output logic        ddr_rd,
     output logic        ddr_we,
@@ -359,10 +376,14 @@ cart cart
 
     .via_pa         (via_pa_i),
 
-    .dl_active      (dl_active),
-    .dl_wr          (dl_wr),
-    .dl_addr        (dl_addr),
-    .dl_data        (dl_data),
+    .save_trigger   (save_trigger),
+
+    // ioctl downloads and savectl's restore stream share the port (they
+    // are serialized: savectl only runs while no download is active)
+    .dl_active      (dl_active || sv_active),
+    .dl_wr          (dl_wr || sv_wr),
+    .dl_addr        (sv_active ? sv_addr : dl_addr),
+    .dl_data        (sv_active ? sv_data : dl_data),
     .dl_busy        (dl_busy),
     .dl_wait        (dl_wait),
 
@@ -375,6 +396,57 @@ cart cart
     .ddr_dout       (ddr_dout),
     .ddr_dout_ready (k_dout_ready),
     .ddr_busy       (k_busy)
+);
+
+// Flash-save persistence (M9.1): $90-triggered save of the DDR3 cart
+// image to the framework's .sav slot; restore replays the mounted file
+// through the cart download port.
+logic        save_trigger;
+logic        sv_active /*verilator public_flat_rd*/, sv_wr;
+logic [20:0] sv_addr;
+logic [7:0]  sv_data;
+logic        s_rd;
+logic [28:0] s_addr;
+logic [7:0]  s_burstcnt;
+logic        s_dout_ready, s_busy;
+
+savectl savectl
+(
+    .clk_sys        (clk_sys),
+
+    .sd_lba         (sd_lba),
+    .sd_rd          (sd_rd),
+    .sd_wr          (sd_wr),
+    .sd_ack         (sd_ack),
+    .sd_buff_addr   (sd_buff_addr),
+    .sd_buff_dout   (sd_buff_dout),
+    .sd_buff_din    (sd_buff_din),
+    .sd_buff_wr     (sd_buff_wr),
+    .img_mounted    (img_mounted),
+    .img_readonly   (img_readonly),
+    .img_size       (img_size),
+
+    .bk_load        (bk_load),
+    .bk_save        (bk_save),
+    .autosave       (autosave),
+    .osd_open       (osd_open),
+    .save_trigger   (save_trigger),
+    .cart_dl_active (dl_active),
+    .cart_busy      (dl_wait),
+    .cart_present   (cart_present),
+
+    .sv_active      (sv_active),
+    .sv_wr          (sv_wr),
+    .sv_addr        (sv_addr),
+    .sv_data        (sv_data),
+    .sv_busy        (dl_busy),
+
+    .c2_rd          (s_rd),
+    .c2_addr        (s_addr),
+    .c2_burstcnt    (s_burstcnt),
+    .ddr_dout       (ddr_dout),
+    .c2_dout_ready  (s_dout_ready),
+    .c2_busy        (s_busy)
 );
 
 ddr_mux ddr_mux
@@ -398,6 +470,12 @@ ddr_mux ddr_mux
     .c1_burstcnt    (k_burstcnt),
     .c1_dout_ready  (k_dout_ready),
     .c1_busy        (k_busy),
+
+    .c2_rd          (s_rd),
+    .c2_addr        (s_addr),
+    .c2_burstcnt    (s_burstcnt),
+    .c2_dout_ready  (s_dout_ready),
+    .c2_busy        (s_busy),
 
     .ddr_rd         (ddr_rd),
     .ddr_we         (ddr_we),
