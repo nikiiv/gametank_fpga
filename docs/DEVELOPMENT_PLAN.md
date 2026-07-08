@@ -222,6 +222,11 @@ to M9 below.
 
 ## M9 — Library sweep & release
 
+- Flash-save persistence to SD (flash-write *emulation* shipped in M8;
+  saves currently live in the DDR3 cart image and die with the session —
+  Ganymede's main game saves through it, so it leads M9). Emulator
+  behavior: `$90` is the game-issued save trigger; persistence target is
+  the MiSTer save-file convention
 - Run the known game library + SDK samples through the system suite
   (N-thousand-frame scripted runs, screenshot-hash checkpoints); fix
   divergences — the M8 opcode/write-path fixes may change behavior in
@@ -240,8 +245,6 @@ to M9 below.
 
 ## Post-1.0
 
-- Cartridge flash-write emulation + save persistence to SD (spec already in
-  HARDWARE.md)
 - Community bug reports; deeper tests added **reactively when a bug earns
   them** — we do not speculatively expand the suite.
 
