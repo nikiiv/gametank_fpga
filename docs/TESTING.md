@@ -52,6 +52,11 @@ is pushed through the cart download port and must boot from DDR3 and draw
 (`make -C sim system GTR_GAME=/abs/path/game.gtr`). The SDK default
 project's logo screen matches the emulator's pixel counts exactly.
 
+Minicraft's M9 title-screen regression runs the real cartridge for 300 raster
+frames, then requires 12 captured scanout frames to be byte-identical:
+`GTR_GAME=/abs/path/Minicraft.gtr tools/gametank-test system --test minicraft_title`.
+The cartridge is external and the test therefore remains opt-in.
+
 ### On-hardware (manual)
 
 Smoke checklist per release: boot, pad feel/latency, HDMI + analog video,
@@ -128,7 +133,7 @@ Power-on state is game-visible: Ganymede does thousands of banked-window
 reads before its first bank latch, so the cart bank register must power
 up matching the emulator (bank 0), not the pull-up value.
 
-Three more emulator-floor lessons from the Ganymede flicker hunt (M8),
+Four emulator-floor lessons from the Ganymede and Minicraft flicker hunts,
 each with a dedicated integration test:
 
 - **VIA reads are a register file** (`test_via_shadow`): the emulator's
@@ -147,6 +152,12 @@ each with a dedicated integration test:
   $2007 with the page bit cleared for ~4k CPU cycles mid-frame is
   invisible there. Scanout latches the bit at active-video start;
   vblank flips still land on time.
+- **A released frontbuffer cannot remain the scanout owner**
+  (`test_frontbuffer_ownership`): Minicraft legitimately changes $2007
+  mid-frame, then selects and redraws the old frontbuffer. The first CPU or
+  blitter write to a still-latched page transfers scanout to the different
+  front page requested by $2007. Register-only transients remain filtered,
+  while the released page's clear/redraw stays hidden.
 
 A caution from the same hunt: with the pre-M8 CPU (no Rockwell bit
 instructions) Ganymede's level generation *appeared* chaotically seeded

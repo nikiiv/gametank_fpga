@@ -501,7 +501,7 @@ vram vram
     .a_din  (blit_vram_we ? blit_vram_din : win_din),
     .a_dout (vram_a_dout),
 
-    .b_page (vid_page),     // VID_OUT_PAGE, latched at active-video start
+    .b_page (vid_page),     // filtered VID_OUT_PAGE / current scanout owner
     .b_addr (vram_b_addr),
     .b_dout (vram_b_dout)
 );
@@ -509,18 +509,29 @@ vram vram
 // The emulator — the compatibility floor — samples VID_OUT_PAGE once per
 // presented frame (refreshScreen, gte.cpp), so sub-frame transients of
 // $2007 bit 1 never reach its screen. Ganymede's engine housekeeping
-// rewrites $2007 with the page bit cleared for ~4k CPU cycles mid-frame
-// every other frame; a live scanout mux paints the mid-composition page
-// as a horizontal band for that window (the M8 flicker / sprite pop-in).
-// Latching the page at active-video start hides such transients while
-// keeping the normal flip path timely (games flip right after the vsync
-// NMI, well inside vblank).
+// rewrites $2007 with the page bit cleared for ~4k CPU cycles mid-frame;
+// latching at active-video start hides that transient.
+//
+// A strict whole-frame latch breaks framebuffer ownership, however.
+// Minicraft legitimately flips $2007 mid-frame and then starts drawing the
+// released old frontbuffer. If scanout keeps the old page until the next
+// frame, its clear/redraw becomes visible as full-screen flicker. Control
+// changes alone therefore remain frame-latched, but the first actual write
+// to the latched page hands scanout to the different front page requested
+// by $2007. This preserves Ganymede's transient filter while ensuring a
+// writer never reuses the page that scanout still owns.
 logic vid_page;
 logic vblank_q;
+wire drawing_vid_page = (blit_vram_we || cpu_vram_we) &&
+                        (bank_reg[3] == vid_page);
 always_ff @(posedge clk_sys) begin
     vblank_q <= vblank;
-    if (reset)                   vid_page <= 1'b0;
-    else if (vblank_q && !vblank) vid_page <= dma_ctl[1];
+    if (reset)
+        vid_page <= 1'b0;
+    else if (drawing_vid_page && (dma_ctl[1] != vid_page))
+        vid_page <= dma_ctl[1];
+    else if (vblank_q && !vblank)
+        vid_page <= dma_ctl[1];
 end
 
 logic vsync_nmi /*verilator public_flat_rd*/;

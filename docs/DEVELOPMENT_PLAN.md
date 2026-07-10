@@ -260,6 +260,23 @@ must match something the framework derives:
   touched sectors) only if the ~2 s background save is felt on hardware.
   NOT emulator `.xor`-compatible — decision + reconsideration paths
   recorded in REQUIREMENTS.md §scope cuts
+
+### M9.2 — Minicraft title flicker ✅ (2026-07-10)
+
+**Acceptance gate: Minicraft's settled title remains complete on hardware.**
+The M8 whole-frame VID_OUT_PAGE latch hid Ganymede's temporary $2007 writes,
+but Minicraft performs a legitimate mid-frame flip and immediately recycles
+the released page. Scanout retained that old page until the next frame and
+displayed its clear/partial redraw. The latch now performs an ownership
+handoff when the CPU or blitter first writes the still-scanned page while
+$2007 requests the other frontbuffer. Register-only transients remain
+frame-filtered (`vidpage_latch`), and the released-page case is locked down by
+`frontbuffer_ownership` plus the real-ROM `minicraft_title` system test.
+
+Hardware gate MET after a clean Quartus build and MGL launch: the USB capture
+contained 300 settled frames with one exact decoded-frame hash; the original
+problem recording contained 99 partial redraw frames in 299 total frames.
+
 - Run the known game library + SDK samples through the system suite
   (N-thousand-frame scripted runs, screenshot-hash checkpoints); fix
   divergences — the M8 opcode/write-path fixes may change behavior in

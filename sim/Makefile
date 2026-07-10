@@ -27,13 +27,15 @@ CFLAGS     := -std=c++17 -O2 -I$(COMMON)
 # explicit rules below (extra fetch/build inputs and arguments).
 # ---------------------------------------------------------------------------
 UNIT_TESTS        := video_timing blitter gram_ddr cart pads_via acp mainbus vram_window cpu_klaus_6502 cpu_klaus_65c02 cpu_wai_stp cpu_zpx cpu_bit_ops
-INTEGRATION_TESTS := cart_ram_pattern cart_download cart_osd_load cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene cart_pads_demo blit_contention gram_window_quadrant blit_bank_race gram_cpu_hostile gram_write_backpressure flash_persist flash_save_roundtrip cart_cache vidpage_latch via_shadow
+INTEGRATION_TESTS := cart_ram_pattern cart_download cart_osd_load cart_fb_pattern lockstep_fb_pattern lockstep_blit_scene cart_pads_demo blit_contention gram_window_quadrant blit_bank_race gram_cpu_hostile gram_write_backpressure flash_persist flash_save_roundtrip cart_cache vidpage_latch frontbuffer_ownership via_shadow
+SYSTEM_TESTS      := game_smoke
 
 # gametank-test --test NAME passes TEST=NAME
 TEST ?=
 ifneq ($(TEST),)
 UNIT_TESTS        := $(filter $(TEST),$(UNIT_TESTS))
 INTEGRATION_TESTS := $(filter $(TEST),$(INTEGRATION_TESTS))
+SYSTEM_TESTS      := $(filter $(TEST),game_smoke minicraft_title)
 endif
 
 .PHONY: unit integration system clean
@@ -44,11 +46,14 @@ unit: $(UNIT_TESTS:%=run-unit-%)
 integration: $(INTEGRATION_TESTS:%=run-integration-%)
 
 # System tier (opt-in, slow): real games through the DDR3 cart path.
-# Usage: make system GTR_GAME=/abs/path/to/game.gtr
-system: $(OUT)/system_game_smoke
-	@echo ">>> system/game_smoke"
-	@if [ -n "$(GTR_GAME)" ]; then cd $(OUT) && ./system_game_smoke $(GTR_GAME); \
-	else echo "set GTR_GAME=/abs/path/to/game.gtr to run"; fi
+# Usage: make system GTR_GAME=/abs/path/to/game.gtr [TEST=minicraft_title]
+system: $(SYSTEM_TESTS:%=$(OUT)/system_%)
+	@if [ -n "$(GTR_GAME)" ]; then \
+	  for test in $(SYSTEM_TESTS); do \
+	    echo ">>> system/$$test"; \
+	    (cd $(OUT) && ./system_$$test "$(GTR_GAME)") || exit $$?; \
+	  done; \
+	else echo "set GTR_GAME=/abs/path/to/game.gtr to run" >&2; exit 2; fi
 
 $(OUT)/system_%: system/test_%.cpp common/sim_harness.h $(RTL_SRCS) | $(OUT)
 	@mkdir -p obj_dir/system_$*
