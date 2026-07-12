@@ -102,7 +102,7 @@ assign sd_buff_din = bb_q;
 typedef enum logic [3:0] {
     IDLE,
     // restore: fetch a block from the file, then drain it into the cart
-    R_REQ, R_FILL, R_DRAIN,
+    R_REQ, R_FILL, R_TAIL, R_DRAIN, R_FLUSH,
     // save: fill the buffer from DDR3, then hand the block to the file
     S_READ, S_WAIT, S_UNPACK, S_REQ, S_XFER
 } st_t;
@@ -200,6 +200,24 @@ always_ff @(posedge clk_sys) begin
                 bb_wd   <= sd_buff_dout;
             end
             if (!sd_ack && ack_q) begin
+                // hps_io pipelines sd_buff_wr. Its byte-511 strobe can
+                // coincide with this falling ack edge, so do not overwrite
+                // bb_addr with the read cursor until that staged write has
+                // committed to the block buffer.
+                st <= R_TAIL;
+            end
+        end
+
+        R_TAIL: begin
+            // Also tolerate a write strobe arriving after ack falls. Move
+            // on only after one strobe-free cycle; the buffer always_ff
+            // commits the preceding staged write on this edge.
+            if (sd_buff_wr) begin
+                bb_we   <= 1'b1;
+                bb_addr <= sd_buff_addr;
+                bb_wd   <= sd_buff_dout;
+            end
+            else begin
                 drain_i <= 9'd0;
                 bb_addr <= 9'd0;      // prime bb_q for byte 0
                 st      <= R_DRAIN;
@@ -215,8 +233,12 @@ always_ff @(posedge clk_sys) begin
                 drain_hold <= 1'b1;
                 if (drain_i == 9'd511) begin
                     if (blk == SAVE_BLOCKS - 1) begin
-                        sv_active <= 1'b0;   // dl_end → cart refills + sweeps
-                        st        <= IDLE;
+                        // Keep the restore selected until the final byte has
+                        // crossed the cart's one-entry download queue and
+                        // reached DDR. Dropping sv_active alongside sv_wr
+                        // would make the shared-port mux substitute stale
+                        // ioctl address/data for byte $1FFFFF.
+                        st <= R_FLUSH;
                     end
                     else begin
                         blk <= blk + 32'd1;
@@ -227,6 +249,13 @@ always_ff @(posedge clk_sys) begin
                     drain_i <= drain_i + 9'd1;
                     bb_addr <= drain_i + 9'd1;
                 end
+            end
+        end
+
+        R_FLUSH: begin
+            if (!sv_busy && !sv_wr) begin
+                sv_active <= 1'b0;   // dl_end -> cart refills + sweeps
+                st        <= IDLE;
             end
         end
 

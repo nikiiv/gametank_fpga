@@ -34,6 +34,8 @@ static std::vector<uint8_t> makeImage() {
 
 int main() {
     std::vector<uint8_t> img = makeImage();
+    std::vector<uint8_t> expected = img;
+    expected[0] = 0x5A;
 
     // ---- phase 1: program flash + $90, capture the save file ----
     std::vector<uint8_t> saved;
@@ -62,6 +64,15 @@ int main() {
         CHECK(saved[0] == 0x5A, "programmed byte not in save file: %02x",
               saved[0]);
         CHECK(saved[FB + 0x300] == PROG[0], "code region not saved");
+
+        size_t mismatch = 0;
+        while (mismatch < expected.size() && saved[mismatch] == expected[mismatch])
+            ++mismatch;
+        CHECK(mismatch == expected.size(),
+              "save image differs at %06zx: got %02x expected %02x",
+              mismatch,
+              mismatch < saved.size() ? saved[mismatch] : 0,
+              mismatch < expected.size() ? expected[mismatch] : 0);
     }
 
     // ---- phase 2: power cycle — original image, mount the save, restore ----
@@ -71,6 +82,11 @@ int main() {
         CHECK(sim.ddr[Sim::CART_OFF + 0] == 0xFF, "fresh image not pristine");
 
         sim.mountSave(saved);                       // non-empty -> auto restore
+        // The restore port must remain selected through its final queued
+        // write. Make the idle ioctl pins hostile so a premature handoff is
+        // visible instead of accidentally replaying the correct last byte.
+        sim.top.dl_addr = 0x012345;
+        sim.top.dl_data = 0x00;
         uint64_t guard = sim.cycles + 60000000ull;
         while (sim.saveState() == 0 && sim.cycles < guard) sim.tick();
         CHECK(sim.saveState() != 0, "restore never started after mount");
@@ -85,6 +101,17 @@ int main() {
         CHECK(sim.ddr[Sim::CART_OFF + 0] == 0x5A,
               "restore did not overlay the save: %02x",
               sim.ddr[Sim::CART_OFF + 0]);
+
+        size_t mismatch = 0;
+        while (mismatch < expected.size() &&
+               sim.ddr[Sim::CART_OFF + mismatch] == expected[mismatch])
+            ++mismatch;
+        CHECK(mismatch == expected.size(),
+              "restored image differs at %06zx: got %02x expected %02x",
+              mismatch,
+              mismatch < expected.size()
+                  ? sim.ddr[Sim::CART_OFF + mismatch] : 0,
+              mismatch < expected.size() ? expected[mismatch] : 0);
     }
 
     std::printf("PASS flash_save_roundtrip: $90 save + power-cycle restore\n");

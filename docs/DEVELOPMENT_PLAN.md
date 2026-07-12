@@ -277,6 +277,32 @@ Hardware gate MET after a clean Quartus build and MGL launch: the USB capture
 contained 300 settled frames with one exact decoded-frame hash; the original
 problem recording contained 99 partial redraw frames in 299 total frames.
 
+### M9.3 — Minicraft gameplay framebuffer isolation ✅ (2026-07-12)
+
+The write-triggered ownership handoff fixed the settled title but still let
+scanout follow a live VRAM page while Minicraft recycled it during gameplay.
+The core now copies the requested 16 KB page into a dedicated display BRAM
+during vblank and scans only that immutable snapshot. `vidpage_latch`,
+`frontbuffer_ownership`, exact video CRC/lockstep checks, and the real-ROM
+`minicraft_title` and `minicraft_gameplay` runs cover the change.
+
+Hardware A/B testing also exposed an independent restore-path bug: removing
+`Minicraft.sav` bypassed restore and let the same RBF load responsive terrain,
+but mounting even a byte-for-byte pristine 2 MB save stalled on the green
+staging frame. MiSTer's pipelined final `sd_buff_wr` can coincide with falling
+`sd_ack`; `savectl` reset its block-buffer address on that edge and corrupted
+the last byte of every 512-byte block. Restore now drains only after the tail
+write commits and keeps its shared cart-download port selected through the
+final DDR write. `flash_save_roundtrip` models the overlapping handshake and
+compares the complete saved/restored 2 MB image byte-for-byte.
+
+Hardware gate MET on loop 2: an automated `claude_Minicraft.mgl` capture with
+the pristine 2 MB save mounted followed Title → New World → Built in, loaded
+complete terrain, accepted scripted movement, and remained alive without the
+old random lines or core crash. The final proof contains 78 seconds / 2,340
+decoded frames at 30 fps. The original modified save remains preserved as a
+`.bak`.
+
 - Run the known game library + SDK samples through the system suite
   (N-thousand-frame scripted runs, screenshot-hash checkpoints); fix
   divergences — the M8 opcode/write-path fixes may change behavior in

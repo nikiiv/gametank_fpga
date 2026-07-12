@@ -20,7 +20,7 @@ module vram
     input  logic [7:0]  a_din,
     output logic [7:0]  a_dout,
 
-    // Port B: scanout
+    // Port B: display-snapshot copy source
     input  logic        b_page,
     input  logic [13:0] b_addr,     // {y, x}
     output logic [7:0]  b_dout

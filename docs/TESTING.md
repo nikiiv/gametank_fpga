@@ -150,14 +150,25 @@ each with a dedicated integration test:
   (`test_vidpage_latch`): the emulator presents the page selected by
   $2007 bit 1 once per host frame, so Ganymede's habit of rewriting
   $2007 with the page bit cleared for ~4k CPU cycles mid-frame is
-  invisible there. Scanout latches the bit at active-video start;
-  vblank flips still land on time.
-- **A released frontbuffer cannot remain the scanout owner**
+  invisible there. The core copies the requested page into an immutable
+  display snapshot during vblank; active scanout never sees the transient.
+- **A released frontbuffer cannot leak writes into active scanout**
   (`test_frontbuffer_ownership`): Minicraft legitimately changes $2007
-  mid-frame, then selects and redraws the old frontbuffer. The first CPU or
-  blitter write to a still-latched page transfers scanout to the different
-  front page requested by $2007. Register-only transients remain filtered,
-  while the released page's clear/redraw stays hidden.
+  mid-frame, then selects and redraws the old frontbuffer. Because active
+  scanout reads the display snapshot instead of either live VRAM page, the
+  released page's clear/redraw stays hidden without a visible page handoff.
+
+The optional real-ROM `minicraft_gameplay` system test navigates New World →
+Built in, runs for 15 seconds, requires zero visible snapshot-page handoffs,
+and checks at frame 180 that terrain composition has advanced beyond the
+uniform green staging frame (the known staging-page hash is gone, frame flips
+resumed, and the blitter-write census crossed the known-good threshold).
+
+`test_flash_save_roundtrip` models MiSTer's block-tail timing, where the final
+`sd_buff_wr` can overlap falling `sd_ack`, and compares all 2 MB of both the
+saved and restored Flash2M image. It also drives hostile idle ioctl data while
+the restore finishes, ensuring the shared cart-download mux cannot replace
+the final save byte before it reaches DDR.
 
 A caution from the same hunt: with the pre-M8 CPU (no Rockwell bit
 instructions) Ganymede's level generation *appeared* chaotically seeded

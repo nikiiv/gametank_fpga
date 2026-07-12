@@ -13,7 +13,7 @@ OUT     := out
 
 CPU_SRCS := $(RTL_DIR)/cpu/cpu_65c02.v $(RTL_DIR)/cpu/ALU.v
 RTL_SRCS := $(abspath waivers.vlt) $(RTL_DIR)/gametank.sv $(RTL_DIR)/gtvideo.sv \
-            $(RTL_DIR)/mainbus.sv $(RTL_DIR)/acp.sv $(RTL_DIR)/pads.sv $(RTL_DIR)/via/via6522.v $(RTL_DIR)/vram.sv $(RTL_DIR)/gram_ddr.sv $(RTL_DIR)/cart.sv $(RTL_DIR)/ddr_mux.sv $(RTL_DIR)/savectl.sv $(RTL_DIR)/blitter.sv $(RTL_DIR)/palette.sv $(CPU_SRCS)
+            $(RTL_DIR)/mainbus.sv $(RTL_DIR)/acp.sv $(RTL_DIR)/pads.sv $(RTL_DIR)/via/via6522.v $(RTL_DIR)/vram.sv $(RTL_DIR)/frame_snapshot.sv $(RTL_DIR)/gram_ddr.sv $(RTL_DIR)/cart.sv $(RTL_DIR)/ddr_mux.sv $(RTL_DIR)/savectl.sv $(RTL_DIR)/blitter.sv $(RTL_DIR)/palette.sv $(CPU_SRCS)
 
 # Our own RTL must stay -Wall clean; the vendored CPU is exempt (policy:
 # vendored cores are not linted/fixed), so its builds are -Wno-fatal.
@@ -35,7 +35,7 @@ TEST ?=
 ifneq ($(TEST),)
 UNIT_TESTS        := $(filter $(TEST),$(UNIT_TESTS))
 INTEGRATION_TESTS := $(filter $(TEST),$(INTEGRATION_TESTS))
-SYSTEM_TESTS      := $(filter $(TEST),game_smoke minicraft_title)
+SYSTEM_TESTS      := $(filter $(TEST),game_smoke minicraft_title minicraft_gameplay)
 endif
 
 .PHONY: unit integration system clean

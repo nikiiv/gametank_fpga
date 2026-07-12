@@ -237,6 +237,16 @@ public:
                 top.sd_buff_dout = v;
                 top.sd_buff_wr = 1;
                 sdIdx++;
+
+                // hps_io pipelines sd_buff_wr behind the HPS transfer.
+                // Its final write strobe can therefore coincide with the
+                // falling sd_ack edge at the end of a 512-byte block.
+                // Exercise that real interface boundary instead of adding
+                // an artificial idle cycle after byte 511.
+                if (sdIdx == 512) {
+                    top.sd_ack = 0;
+                    sdPhase = 0;
+                }
             }
             else {
                 top.sd_ack = 0;

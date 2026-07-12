@@ -9,7 +9,7 @@
 // Cart: fills VRAM page 0 with $11, page 1 with $22, displays page 1 with
 // the vsync NMI enabled; the NMI handler waits ~25k CPU cycles into active
 // video, transiently shows page 0 for ~4k cycles, and restores page 1.
-// The captured output frame must be uniform (all page-1 pixels).
+// The vblank display snapshot must remain uniform (all page-1 pixels).
 #include "sim_harness.h"
 #include <map>
 

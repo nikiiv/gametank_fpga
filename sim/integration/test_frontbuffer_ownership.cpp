@@ -1,12 +1,12 @@
 // Minicraft flicker regression: a legitimate mid-frame page flip releases
-// the old frontbuffer for drawing. Scanout must stop using that page before
-// the first write lands, even though normal page selection is frame-stable
-// to hide short $2007 transients (test_vidpage_latch).
+// the old frontbuffer for drawing. Scanout must not expose writes to either
+// game-owned page after the frame starts, while short $2007 transients must
+// remain filtered (test_vidpage_latch).
 //
 // Both pages start as $22. During active video the NMI handler selects page 1
 // for display, selects page 0 for drawing, then repaints rows 64..79 with
-// $11. A stale whole-frame page latch exposes that repaint as a horizontal
-// band; a correct ownership handoff keeps the captured frame uniformly $22.
+// $11. Direct VRAM scanout exposes that repaint as a horizontal band; an
+// immutable vblank snapshot keeps the captured frame uniformly $22.
 
 #include "sim_harness.h"
 
@@ -97,7 +97,7 @@ int main(int, char**) {
           "released frontbuffer writes leaked into scanout (%zu colors)",
           colors.size());
 
-    std::printf("PASS frontbuffer_ownership: drawing released page does not "
-                "leak into scanout\n");
+    std::printf("PASS frontbuffer_ownership: released-page drawing does not "
+                "leak into the display snapshot\n");
     return 0;
 }

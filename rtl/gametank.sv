@@ -134,6 +134,8 @@ logic        cpu_vram_we, cpu_gram_we, cpu_gram_rd, blit_param_we;
 logic [7:0]  vram_a_dout, gram_b_dout;
 logic [13:0] vram_b_addr;
 logic [7:0]  vram_b_dout;
+logic [13:0] scanout_addr;
+logic [7:0]  scanout_data;
 logic [7:0]  dma_ctl  /*verilator public_flat_rd*/;
 logic [7:0]  bank_reg /*verilator public_flat_rd*/;
 logic        blit_irq;
@@ -501,38 +503,29 @@ vram vram
     .a_din  (blit_vram_we ? blit_vram_din : win_din),
     .a_dout (vram_a_dout),
 
-    .b_page (vid_page),     // filtered VID_OUT_PAGE / current scanout owner
+    .b_page (vid_page),     // page being copied into the display snapshot
     .b_addr (vram_b_addr),
     .b_dout (vram_b_dout)
 );
 
-// The emulator — the compatibility floor — samples VID_OUT_PAGE once per
-// presented frame (refreshScreen, gte.cpp), so sub-frame transients of
-// $2007 bit 1 never reach its screen. Ganymede's engine housekeeping
-// rewrites $2007 with the page bit cleared for ~4k CPU cycles mid-frame;
-// latching at active-video start hides that transient.
-//
-// A strict whole-frame latch breaks framebuffer ownership, however.
-// Minicraft legitimately flips $2007 mid-frame and then starts drawing the
-// released old frontbuffer. If scanout keeps the old page until the next
-// frame, its clear/redraw becomes visible as full-screen flicker. Control
-// changes alone therefore remain frame-latched, but the first actual write
-// to the latched page hands scanout to the different front page requested
-// by $2007. This preserves Ganymede's transient filter while ensuring a
-// writer never reuses the page that scanout still owns.
-logic vid_page;
-logic vblank_q;
-wire drawing_vid_page = (blit_vram_we || cpu_vram_we) &&
-                        (bank_reg[3] == vid_page);
-always_ff @(posedge clk_sys) begin
-    vblank_q <= vblank;
-    if (reset)
-        vid_page <= 1'b0;
-    else if (drawing_vid_page && (dma_ctl[1] != vid_page))
-        vid_page <= dma_ctl[1];
-    else if (vblank_q && !vblank)
-        vid_page <= dma_ctl[1];
-end
+// The emulator presents one immutable framebuffer image per host frame.
+// Snapshot the requested hardware page during vblank so a game can flip and
+// immediately recycle the released page without scanout following its writes.
+logic vid_page /*verilator public_flat_rd*/;
+frame_snapshot frame_snapshot
+(
+    .clk            (clk_sys),
+    .reset          (reset),
+    .vblank         (vblank),
+    .requested_page (dma_ctl[1]),
+
+    .source_page    (vid_page),
+    .source_addr    (vram_b_addr),
+    .source_data    (vram_b_dout),
+
+    .scan_addr      (scanout_addr),
+    .scan_data      (scanout_data)
+);
 
 logic vsync_nmi /*verilator public_flat_rd*/;
 
@@ -541,8 +534,8 @@ gtvideo gtvideo
     .clk       (clk_sys),
     .reset     (reset),
 
-    .fb_addr   (vram_b_addr),
-    .fb_data   (vram_b_dout),
+    .fb_addr   (scanout_addr),
+    .fb_data   (scanout_data),
 
     .ce_pix    (ce_pix),
     .hblank    (hblank),
