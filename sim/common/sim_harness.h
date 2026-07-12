@@ -224,6 +224,10 @@ public:
                 sdIdx = 0;
                 if (savefile.size() < (size_t)(sdLba + 1) * 512)
                     savefile.resize((size_t)(sdLba + 1) * 512, 0);
+                // hps_io resets the upload address as it acknowledges the
+                // request. The core therefore gets one clock, not two, to
+                // prime its registered byte-0 output before Main samples it.
+                top.sd_buff_addr = 0;
                 top.sd_ack = 1;
                 sdPhase = 2;
             }
@@ -253,16 +257,13 @@ public:
                 sdPhase = 0;
             }
             break;
-        case 2:   // stream block from core to file. sd_buff_din is the core's
-                  // registered bb[sd_buff_addr], valid one tick after the
-                  // address is presented — so capture byte (sdIdx-1) while
-                  // presenting address sdIdx. 513 ticks, no byte dropped.
-            if (sdIdx >= 1)
-                savefile[(size_t)sdLba * 512 + sdIdx - 1] = top.sd_buff_din;
-            if (sdIdx < 512) {
+        case 2:   // stream block from core to file. Address 0 was presented
+                  // with the acknowledge in phase 0; capture it now, then
+                  // pipeline each following address one clock ahead.
+            savefile[(size_t)sdLba * 512 + sdIdx] = top.sd_buff_din;
+            sdIdx++;
+            if (sdIdx < 512)
                 top.sd_buff_addr = sdIdx;
-                sdIdx++;
-            }
             else {
                 top.sd_ack = 0;
                 sdPhase = 0;

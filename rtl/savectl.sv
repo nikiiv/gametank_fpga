@@ -283,8 +283,8 @@ always_ff @(posedge clk_sys) begin
                 if (word_i == 6'd63) begin
                     // NB: no bb_addr reset here — it would collide with the
                     // {word_i,lane_i}=511 write above (last assignment wins,
-                    // clobbering bb[0] with byte 511). S_XFER reads via
-                    // sd_buff_addr, so the cursor need not be reset.
+                    // clobbering bb[0] with byte 511). S_REQ resets it after
+                    // that staged final write has committed.
                     word_i  <= 6'd0;
                     st      <= S_REQ;
                 end
@@ -297,6 +297,11 @@ always_ff @(posedge clk_sys) begin
         end
 
         S_REQ: begin
+            // Prime the registered block-buffer output with byte 0 while
+            // Main observes sd_wr. hps_io can acknowledge and begin reading
+            // with only one intervening core clock; waiting for S_XFER to
+            // follow sd_buff_addr leaves the first byte stale on hardware.
+            bb_addr <= 9'd0;
             sd_lba <= blk;
             sd_wr  <= 1'b1;
             if (sd_ack && !ack_q) sd_wr <= 1'b0;
