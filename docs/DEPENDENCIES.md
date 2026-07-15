@@ -84,9 +84,11 @@ demand, never vendored. Audited 2026-07-06.
   initializers; value unchanged). The file must also be compiled as
   SystemVerilog (`files.qip`) — it uses continuous assigns to variables.
 - **Integrated (M5):** at $2800–$2FFF (`addr & 15`), phi2 mapped to the CPU
-  cycle (`falling` = the RDY strobe), IRQB wire-ORed onto the CPU IRQ per the
-  schematic finding in HARDWARE.md §Interrupts. Port pins loop back the
-  VIA's own drive (pull-ups on inputs) until the M7 cart SPI takes Port A.
+  cycle (`falling` = the RDY strobe). CPU reads and M7 cartridge SPI use the
+  emulator-compatible register shadow; the latter follows ORA writes even
+  when DDRA is clear, as `UpdateFlashShiftRegister` does. The full VIA still
+  runs underneath with its port pins looped back, but VIA IRQ is suppressed
+  because the compatibility-floor emulator never raises it.
 
 ### DDR3 helper (`rtl/cart/ddram.sv`)
 - **Upstream pattern:** Sorgelig's `ddram.sv` as used in https://github.com/MiSTer-devel/AtariLynx_MiSTer (`rtl/ddram.sv`) — the reference implementation for OSD-download-to-DDR3 cart storage.

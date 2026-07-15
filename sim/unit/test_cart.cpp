@@ -4,7 +4,9 @@
 // size/type and triggers the fixed-bank fill). Its fixed bank ($C000-$FFFF,
 // image 0x1FC000+) holds a hand-assembled program that:
 //   - programs the VIA Port A SPI (PA0 clk, PA1 data, PA2 latch) to load
-//     the 74HC595 bank register with $01, $55, then $00
+//     the 74HC595 bank register with $01, $55, then $00, without first
+//     configuring DDRA (matching the emulator and the SDK routine used by
+//     the GitHub issue #1 diagnostic cartridge)
 //   - reads banked-window bytes in each bank, plus fixed-bank bytes,
 //     storing them to zero page
 //   - sums 32 sequential banked bytes (exercises the prefetch path)
@@ -49,8 +51,6 @@ int main() {
     put(0x030, {0x78, 0xD8,            // SEI CLD
                 0xA2, 0xFF, 0x9A,      // LDX #$FF TXS
                 0x9C, 0x05, 0x20,      // STZ $2005
-                0xA9, 0x07,            // LDA #7
-                0x8D, 0x03, 0x28,      // STA $2803 (DDRA: PA0-2 out)
                 0x9C, 0x01, 0x28,      // STZ $2801
                 0xA9, 0x01,            // LDA #1
                 0x20, 0x00, 0xC0,      // JSR setbank
@@ -73,11 +73,11 @@ int main() {
                 0xE0, 0x20,            // CPX #$20
                 0xD0, 0xF6,            // BNE cpy
                 0xA9, 0xC3, 0x85, 0x1F,         // done marker
-                0x4C, 0x87, 0xC0});    // halt: JMP $C087
+                0x4C, 0x82, 0xC0});    // halt: JMP $C082
     // vectors
-    put(0x3FFA, {0x87, 0xC0,           // NMI -> halt
+    put(0x3FFA, {0x82, 0xC0,           // NMI -> halt
                  0x30, 0xC0,           // RESET -> $C030
-                 0x87, 0xC0});         // IRQ -> halt
+                 0x82, 0xC0});         // IRQ -> halt
 
     sim.gtrDownloadSparse(img);
     sim.reset();

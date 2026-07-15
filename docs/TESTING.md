@@ -133,14 +133,19 @@ Power-on state is game-visible: Ganymede does thousands of banked-window
 reads before its first bank latch, so the cart bank register must power
 up matching the emulator (bank 0), not the pull-up value.
 
-Four emulator-floor lessons from the Ganymede and Minicraft flicker hunts,
-each with a dedicated integration test:
+Five emulator-floor lessons from the Ganymede and Minicraft flicker hunts,
+each with a dedicated regression test:
 
 - **VIA reads are a register file** (`test_via_shadow`): the emulator's
   VIA returns the last written byte on any read — no live timers, no
   IRQs. Ganymede sweeps all 16 VIA registers as boot entropy and reads
   them ~32k times during level load; live via6522 counter values fork
   its procedural level away from the emulator's.
+- **Cartridge SPI follows ORA writes, not resolved DDRA pins** (`test_cart`):
+  the emulator's `UpdateFlashShiftRegister` explicitly ignores DDRA, and
+  the SDK bank routine used by the issue #1 diagnostic does not configure
+  it. Feeding the cart from reset-default VIA pins leaves PA0-2 pulled high
+  and silently aliases every bank read to bank 0.
 - **The banked cart window must be stall-free in steady state**
   (`test_cart_cache`): real mask ROM has no latency. The old 2-slot word
   buffer cost Ganymede's compositor ~7k clk of cart stalls per frame.

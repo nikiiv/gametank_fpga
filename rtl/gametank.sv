@@ -207,13 +207,13 @@ logic       via_irq;
 
 // The compatibility floor (GameTankEmulator) models the VIA as a bare
 // register file: reads return the last byte written, timers never tick,
-// IRQs never fire — and shipped software depends on that. Ganymede sweeps
-// all 16 VIA registers at boot as an entropy source; live via6522 timer
-// values steer its level generator away from the emulator's output (M8).
-// CPU reads are therefore served from this write-shadow and via_irq is
-// not raised; the real via6522 still runs underneath for its one live
-// role — Port A driving the cartridge bank SPI (write-only from the CPU's
-// point of view).
+// IRQs never fire, and Port A writes drive the cartridge bank SPI without
+// regard to DDRA — shipped software depends on those details. Ganymede
+// sweeps all 16 VIA registers at boot as an entropy source; live via6522
+// timer values steer its level generator away from the emulator's output
+// (M8). CPU reads and the cartridge SPI are therefore served from this
+// write-shadow, and via_irq is not raised. The real via6522 remains
+// instantiated underneath so its pin-level behavior stays available.
 logic [7:0] via_shadow [0:15];
 wire  [7:0] via_shadow_q = via_shadow[win_addr[3:0]];
 always_ff @(posedge clk_sys) begin
@@ -376,7 +376,10 @@ cart cart
     .cart_stall     (cart_stall),
     .cart_present   (cart_present),
 
-    .via_pa         (via_pa_i),
+    // The emulator intentionally ignores DDRA here. Using resolved VIA
+    // pins leaves PA0-2 pulled high after reset and makes the standard SDK
+    // bank routine silently select bank 0 forever (GitHub issue #1).
+    .via_pa         (via_shadow[1]),
 
     .save_trigger   (save_trigger),
 

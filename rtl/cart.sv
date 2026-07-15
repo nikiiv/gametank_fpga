@@ -62,7 +62,8 @@ module cart
     output logic        cart_present,
     output logic        save_trigger,   // 1-clk pulse: game wrote flash $90
 
-    // VIA Port A pin levels (bank shift register)
+    // Emulator-compatible VIA Port A register levels (bank shift register;
+    // DDRA is intentionally ignored by the core top, as in the emulator)
     input  logic [7:0]  via_pa,
 
     // download stream (ioctl / sim harness)

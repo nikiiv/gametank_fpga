@@ -43,7 +43,7 @@ generation (`timekeeper.h:16`). Vsync every `clk/60` cycles ≈ 59,659 cycles
 | `$0000–$1FFF` | System RAM window. Physical address = `(banking[7:6] << 13) \| addr` → 4 banks of 8 KB into the 32 KB SRAM (`gte.cpp:188–190`) |
 | `$2000–$2007` (writes) | System/audio registers: `$2005` banking, `$2007` DMA control, others → audio registers (decoded `addr & 7`, see Audio) (`gte.cpp:462–507`) |
 | `$2008 / $2009` (reads) | Gamepad 1 / 2 (`gte.cpp:348`) |
-| `$2800–$280F` | 6522 VIA (`gte.cpp:338–340`). The emulator models it as a bare register file — reads return the last written byte, timers never tick, IRQs never fire — and shipped games depend on that (Ganymede seeds its level generator from VIA register sweeps). The core serves CPU reads from a write-shadow and raises no VIA IRQ (`test_via_shadow`); the real via6522 runs underneath only to drive the Port A cartridge-bank SPI (M8) |
+| `$2800–$280F` | 6522 VIA (`gte.cpp:338–340`). The emulator models it as a bare register file — reads return the last written byte, timers never tick, IRQs never fire, and ORA writes drive the cartridge SPI regardless of DDRA — and shipped software depends on those details. The core serves CPU reads and cartridge SPI from a write-shadow and raises no VIA IRQ (`test_via_shadow`, `test_cart`); the real via6522 remains instantiated underneath (M8) |
 | `$3000–$3FFF` | 4 KB audio RAM, shared with ACP (dual-port) (`gte.cpp:336–337, 461`) |
 | `$4000–$7FFF` | VDMA window: framebuffer/GRAM access, or blitter parameters when copy mode is on (see Blitter) |
 | `$8000–$FFFF` | Cartridge (vectors at `$FFFA–$FFFF` — **no BIOS/boot ROM**; the console boots straight from cart) |
@@ -285,9 +285,11 @@ for the post-1.0 save milestone.
 ≤32 KB = EEPROM mirrored end-aligned across the window (for
 power-of-two sizes exactly `addr & (size-1)` — 8/16/32 KB carts all
 exist in the wild), else Flash2M (RAM32K deferred post-1.0 with flash
-writes). The 74HC595 shift register is modeled bit-true on the VIA Port A
-pins (shift on PA0 rise with pre-edge PA1, latch on PA2 rise, bit 7
-forced high). **Power-on value (M8):** undefined on real hardware, but
+writes). The 74HC595 shift register is modeled bit-true from VIA ORA
+writes (shift on PA0 rise with pre-edge PA1, latch on PA2 rise, bit 7
+forced high). DDRA is intentionally ignored here, matching the emulator's
+`UpdateFlashShiftRegister` behavior and the standard SDK bank routine.
+**Power-on value (M8):** undefined on real hardware, but
 game-visible — Ganymede issues ~3,200 banked-window reads before its
 first SPI latch. The emulator's BSS-zero init shows those reads bank 0;
 the register powers up as `$80` (bank 0) to match, not the pull-up
